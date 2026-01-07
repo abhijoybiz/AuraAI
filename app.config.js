@@ -13,10 +13,10 @@ module.exports = {
     slug: "expo-app",
     version: "1.0.0",
     orientation: "portrait",
-    icon: "./assets/icon.png",
+    icon: "./assets/logo.png",
     userInterfaceStyle: "light",
     splash: {
-      image: "./assets/splash.png",
+      image: "./assets/logo.png",
       resizeMode: "contain",
       backgroundColor: "#ffffff"
     },
@@ -28,12 +28,13 @@ module.exports = {
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: "./assets/adaptive-icon.png",
+        foregroundImage: "./assets/logo.png",
         backgroundColor: "#ffffff"
-      }
+      },
+      package: "com.anonymous.expoapp"
     },
     web: {
-      favicon: "./assets/favicon.png"
+      favicon: "./assets/logo.png"
     },
     extra: {
       deepgramApiKey: DEEPGRAM_API_KEY,

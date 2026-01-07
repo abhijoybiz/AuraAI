@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
-  SafeAreaView,
   View,
   ScrollView,
   Image,
@@ -9,7 +8,6 @@ import {
   TextInput,
   StyleSheet,
   FlatList,
-  StatusBar,
   Dimensions,
   Animated,
   Easing,
@@ -19,6 +17,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { MOCK_DATA, FILTERS } from "../constants/mockData";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
 
@@ -33,15 +32,23 @@ export default function HomeScreen() {
 
   const [selectedCard, setSelectedCard] = useState(null);
   const [isCardMenuVisible, setIsCardMenuVisible] = useState(false);
+  const [cardMenuPosition, setCardMenuPosition] = useState({ x: 0, y: 0 });
   const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [isAssignFilterVisible, setIsAssignFilterVisible] = useState(false);
 
   const [isAccountModalVisible, setIsAccountModalVisible] = useState(false);
+  const [accountMenuPosition, setAccountMenuPosition] = useState({ x: 0, y: 0 });
 
   // FAB State
   const [isFabExpanded, setIsFabExpanded] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Menu Animations - Separate for each menu
+  const accountMenuAnim = useRef(new Animated.Value(0)).current;
+  const accountBackdropAnim = useRef(new Animated.Value(0)).current;
+  const cardMenuAnim = useRef(new Animated.Value(0)).current;
+  const cardBackdropAnim = useRef(new Animated.Value(0)).current;
 
   // FAB Animation
   useEffect(() => {
@@ -51,6 +58,44 @@ export default function HomeScreen() {
       easing: Easing.ease,
     }).start();
   }, [isFabExpanded]);
+
+  const animateContextMenuOpen = (menuAnim, backdropAnim) => {
+    menuAnim.setValue(0);
+    backdropAnim.setValue(0);
+    Animated.parallel([
+      Animated.timing(backdropAnim, {
+        toValue: 1,
+        duration: 160,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(menuAnim, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const animateContextMenuClose = (menuAnim, backdropAnim, onDone) => {
+    Animated.parallel([
+      Animated.timing(menuAnim, {
+        toValue: 0,
+        duration: 160,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.timing(backdropAnim, {
+        toValue: 0,
+        duration: 160,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) onDone?.();
+    });
+  };
 
   const filteredData = cards.filter((item) => {
     const matchesSearch = item.title
@@ -90,13 +135,43 @@ export default function HomeScreen() {
     );
   };
 
-  const openCardMenu = (card) => {
+  const openAccountMenu = (event) => {
+    if (event && event.nativeEvent) {
+      setAccountMenuPosition({
+        x: event.nativeEvent.pageX,
+        y: event.nativeEvent.pageY,
+      });
+    }
+    setIsAccountModalVisible(true);
+    requestAnimationFrame(() =>
+      animateContextMenuOpen(accountMenuAnim, accountBackdropAnim)
+    );
+  };
+
+  const closeAccountMenu = () => {
+    animateContextMenuClose(accountMenuAnim, accountBackdropAnim, () =>
+      setIsAccountModalVisible(false)
+    );
+  };
+
+  const openCardMenu = (card, event) => {
     setSelectedCard(card);
+    if (event && event.nativeEvent) {
+      setCardMenuPosition({
+        x: event.nativeEvent.pageX,
+        y: event.nativeEvent.pageY,
+      });
+    }
     setIsCardMenuVisible(true);
+    requestAnimationFrame(() =>
+      animateContextMenuOpen(cardMenuAnim, cardBackdropAnim)
+    );
   };
 
   const closeCardMenu = () => {
-    setIsCardMenuVisible(false);
+    animateContextMenuClose(cardMenuAnim, cardBackdropAnim, () =>
+      setIsCardMenuVisible(false)
+    );
   };
 
   const handleDeleteCard = () => {
@@ -144,194 +219,137 @@ export default function HomeScreen() {
   };
 
   const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.column3}
-      onPress={() => alert(`Opening ${item.title}`)}
-    >
+    <View style={styles.column3}>
       <View style={styles.row5}>
         <Text style={styles.text5} numberOfLines={1}>
           {item.title}
         </Text>
-        <Image
-          source={{ uri: item.image }}
-          resizeMode={"cover"}
-          style={styles.image5}
-        />
+        <TouchableOpacity
+          style={styles.cardKebabButton}
+          onPress={(e) => openCardMenu(item, e)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="ellipsis-horizontal" size={18} color="#6B6B70" />
+        </TouchableOpacity>
       </View>
-      <View style={styles.row6}>
-        <View style={styles.row7}>
-          <Image
-            source={{
-              uri: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/fb3lsel6_expires_30_days.png",
-            }}
-            resizeMode={"stretch"}
-            style={styles.image6}
-          />
-          <Text style={styles.text6}>{item.date}</Text>
+      <TouchableOpacity
+        style={styles.cardContentArea}
+        onPress={() => alert(`Opening ${item.title}`)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.row6}>
+          <View style={styles.row7}>
+            <Ionicons name="calendar-outline" size={14} color="#6B6B70" />
+            <Text style={styles.text6}>{item.date}</Text>
+          </View>
+          <View style={styles.row8}>
+            <Ionicons name="time-outline" size={14} color="#6B6B70" />
+            <Text style={styles.text6}>{item.duration}</Text>
+          </View>
         </View>
-        <View style={styles.row8}>
-          <Image
-            source={{
-              uri: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/ujsytc65_expires_30_days.png",
-            }}
-            resizeMode={"stretch"}
-            style={styles.image6}
-          />
-          <Text style={styles.text6}>{item.duration}</Text>
-        </View>
-      </View>
+      </TouchableOpacity>
       <View style={styles.row9}>
         <View style={styles.row10}>
           <TouchableOpacity
             style={styles.view2}
             onPress={() => toggleFavorite(item.id)}
           >
-            <Image
-              source={{
-                uri: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/zhqyx54k_expires_30_days.png",
-              }}
-              resizeMode={"stretch"}
-              style={[
-                styles.image7,
-                item.isFavorite && styles.favoriteTint,
-              ]}
+            <Ionicons 
+              name={item.isFavorite ? "heart" : "heart-outline"} 
+              size={18} 
+              color={item.isFavorite ? "#e67e22" : "#555"}
             />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.view3}
             onPress={() => alert("Share clicked")}
           >
-            <Image
-              source={{
-                uri: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/8iuoko8m_expires_30_days.png",
-              }}
-              resizeMode={"stretch"}
-              style={styles.image7}
+            <Ionicons 
+              name="share-outline" 
+              size={18} 
+              color="#555"
             />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={() => openCardMenu(item)}>
-          <Image
-            source={{
-              uri: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/pstw3qkp_expires_30_days.png",
-            }}
-            resizeMode={"stretch"}
-            style={styles.image8}
-          />
-        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <View style={styles.contentContainer}>
-        <View style={styles.row}>
-          <View style={styles.row2}>
-            <Image
-              source={{
-                uri: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/2g25thzd_expires_30_days.png",
-              }}
-              resizeMode={"stretch"}
-              style={styles.image}
-            />
-            <View style={styles.view}>
-              <Text style={styles.text}>{"Memry"}</Text>
-            </View>
-          </View>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => setIsAccountModalVisible(true)}
-          >
-            <Text style={styles.text2}>{"S"}</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.headerColumn}>
-          <View style={styles.row3}>
-            <Image
-              source={{
-                uri: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/pgamrn3r_expires_30_days.png",
-              }}
-              resizeMode={"stretch"}
-              style={styles.image2}
-            />
-            <TextInput
-              placeholder={"Search"}
-              value={textInput1}
-              onChangeText={setTextInput1}
-              style={styles.input}
-              placeholderTextColor="#999"
-            />
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.filtersScroll}
-          >
-            <View style={styles.row4}>
-              {filters.map((filter) => (
+        {/* Fixed top brand header */}
+            <View style={styles.brandBar}>
+              <View style={styles.row}>
+                <View style={styles.row2}>
+                  <Image
+                source={require("../assets/logo.png")}
+                resizeMode={"stretch"}
+                style={styles.image}
+                  />
+                  <View style={styles.view}>
+                <Text style={styles.text}>{"Memry"}</Text>
+                <Text style={styles.subtitle}>AI notes from lectures</Text>
+                  </View>
+                </View>
                 <TouchableOpacity
-                  key={filter}
-                  style={[
-                    styles.buttonRow,
-                    activeFilter === filter && {
-                      backgroundColor: "#212121",
-                    },
-                  ]}
-                  onPress={() => setActiveFilter(filter)}
+                  style={styles.button}
+                  onPress={openAccountMenu}
+                  activeOpacity={0.85}
                 >
-                  {filter === "Favorites" && (
-                    <Image
-                      source={{
-                        uri: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/sicdh94m_expires_30_days.png",
-                      }}
-                      resizeMode={"stretch"}
-                      style={[
-                        styles.image3,
-                        activeFilter === filter && {
-                          tintColor: "#FFFFFF",
-                        },
-                      ]}
-                    />
-                  )}
-                  {filter === "Physics" && (
-                    <Image
-                      source={{
-                        uri: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/gdradsz9_expires_30_days.png",
-                      }}
-                      resizeMode={"stretch"}
-                      style={[
-                        styles.image3,
-                        activeFilter === filter && {
-                          tintColor: "#FFFFFF",
-                        },
-                      ]}
-                    />
-                  )}
-                  <Text
-                    style={
-                      activeFilter === filter
-                        ? styles.text3
-                        : styles.text4
-                    }
-                    numberOfLines={1}
-                  >
-                    {filter}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity onPress={handleAddFilter}>
-                <Image
-                  source={{
-                    uri: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/acs3pgrb_expires_30_days.png",
-                  }}
-                  resizeMode={"stretch"}
-                  style={styles.image4}
-                />
-              </TouchableOpacity>
+              <Text style={styles.text2}>{"S"}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Fixed controls (slightly lower) */}
+        <View style={styles.fixedControls}>
+          <View style={styles.headerColumn}>
+            <View style={styles.row3}>
+              <Ionicons name="search" size={16} color="#666" style={styles.searchIcon} />
+              <TextInput
+                placeholder={"Search"}
+                value={textInput1}
+                onChangeText={setTextInput1}
+                style={styles.input}
+                placeholderTextColor="#8E8E93"
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
             </View>
-          </ScrollView>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.filtersScroll}
+              contentContainerStyle={styles.filtersContent}
+            >
+              <View style={styles.row4}>
+                {filters.map((filter) => (
+                  <TouchableOpacity
+                    key={filter}
+                    style={[
+                      styles.buttonRow,
+                      activeFilter === filter && styles.buttonRowActive,
+                    ]}
+                    onPress={() => setActiveFilter(filter)}
+                    activeOpacity={0.85}
+                  >
+                    <Text
+                      style={activeFilter === filter ? styles.text3 : styles.text4}
+                      numberOfLines={1}
+                    >
+                      {filter}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity onPress={handleAddFilter} activeOpacity={0.85}>
+                  <View style={styles.addChip}>
+                    <Ionicons name="add" size={18} color="#111" />
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
         </View>
 
         <FlatList
@@ -378,38 +396,69 @@ export default function HomeScreen() {
       {/* Account Settings Modal */}
       <Modal
         transparent
-        animationType="fade"
+        animationType="none"
         visible={isAccountModalVisible}
-        onRequestClose={() => setIsAccountModalVisible(false)}
+        onRequestClose={closeAccountMenu}
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setIsAccountModalVisible(false)}
-        >
-          <View style={styles.modalContent} pointerEvents="box-none">
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Account</Text>
-              <Pressable
-                style={styles.modalButton}
-                onPress={() => Alert.alert("Profile")}
-              >
-                <Text style={styles.modalButtonText}>Profile</Text>
-              </Pressable>
-              <Pressable
-                style={styles.modalButton}
-                onPress={() => Alert.alert("Notifications")}
-              >
-                <Text style={styles.modalButtonText}>Notifications</Text>
-              </Pressable>
-              <Pressable
-                style={styles.modalButton}
-                onPress={() => Alert.alert("Logged out")}
-              >
-                <Text style={styles.modalButtonText}>Logout</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Pressable>
+        <View style={styles.contextMenuRoot}>
+          <Animated.View
+            style={[styles.contextMenuBackdrop, { opacity: accountBackdropAnim }]}
+          />
+          <Pressable style={styles.contextMenuPressable} onPress={closeAccountMenu} />
+          <Animated.View
+            style={[
+              styles.contextMenu,
+              {
+                top: accountMenuPosition.y + 5,
+                right: 20,
+                opacity: accountMenuAnim,
+                transform: [
+                  {
+                    scale: accountMenuAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.75, 1],
+                    }),
+                  },
+                  {
+                    translateY: accountMenuAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-10, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+            onStartShouldSetResponder={() => true}
+          >
+            <Pressable
+              style={styles.contextMenuItem}
+              onPress={() => {
+                Alert.alert("Profile");
+                closeAccountMenu();
+              }}
+            >
+              <Text style={styles.contextMenuItemText}>Profile</Text>
+            </Pressable>
+            <Pressable
+              style={styles.contextMenuItem}
+              onPress={() => {
+                Alert.alert("Notifications");
+                closeAccountMenu();
+              }}
+            >
+              <Text style={styles.contextMenuItemText}>Notifications</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.contextMenuItem, { borderBottomWidth: 0 }]}
+              onPress={() => {
+                Alert.alert("Logged out");
+                closeAccountMenu();
+              }}
+            >
+              <Text style={styles.contextMenuItemText}>Logout</Text>
+            </Pressable>
+          </Animated.View>
+        </View>
       </Modal>
 
       {/* Add Filter Modal */}
@@ -424,7 +473,7 @@ export default function HomeScreen() {
           onPress={() => setIsFilterModalVisible(false)}
         >
           <View style={styles.modalContent} pointerEvents="box-none">
-            <View style={styles.modalCard}>
+            <Pressable style={styles.modalCard} onPress={() => {}}>
               <Text style={styles.modalTitle}>New Filter</Text>
               <TextInput
                 placeholder="Filter name"
@@ -449,7 +498,7 @@ export default function HomeScreen() {
                   <Text style={styles.modalButtonText}>Save</Text>
                 </Pressable>
               </View>
-            </View>
+            </Pressable>
           </View>
         </Pressable>
       </Modal>
@@ -457,49 +506,56 @@ export default function HomeScreen() {
       {/* Card Menu Modal */}
       <Modal
         transparent
-        animationType="fade"
+        animationType="none"
         visible={isCardMenuVisible}
         onRequestClose={closeCardMenu}
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={closeCardMenu}
-        >
-          <View style={styles.modalContent} pointerEvents="box-none">
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>
-                {selectedCard?.title || "Options"}
+        <View style={styles.contextMenuRoot}>
+          <Animated.View
+            style={[styles.contextMenuBackdrop, { opacity: cardBackdropAnim }]}
+          />
+          <Pressable style={styles.contextMenuPressable} onPress={closeCardMenu} />
+          <Animated.View
+            style={[
+              styles.contextMenu,
+              {
+                top: cardMenuPosition.y + 5,
+                right: 20,
+                opacity: cardMenuAnim,
+                transform: [
+                  {
+                    scale: cardMenuAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.75, 1],
+                    }),
+                  },
+                  {
+                    translateY: cardMenuAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-10, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+            onStartShouldSetResponder={() => true}
+          >
+            <Pressable style={styles.contextMenuItem} onPress={handleRenameCard}>
+              <Text style={styles.contextMenuItemText}>Rename</Text>
+            </Pressable>
+            <Pressable style={styles.contextMenuItem} onPress={openAssignFilter}>
+              <Text style={styles.contextMenuItemText}>Assign Filter</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.contextMenuItem, { borderBottomWidth: 0 }]}
+              onPress={handleDeleteCard}
+            >
+              <Text style={[styles.contextMenuItemText, { color: "#D00" }]}>
+                Delete
               </Text>
-              <Pressable
-                style={styles.modalButton}
-                onPress={handleRenameCard}
-              >
-                <Text style={styles.modalButtonText}>Rename</Text>
-              </Pressable>
-              <Pressable
-                style={styles.modalButton}
-                onPress={openAssignFilter}
-              >
-                <Text style={styles.modalButtonText}>
-                  Assign Filter
-                </Text>
-              </Pressable>
-              <Pressable
-                style={styles.modalButton}
-                onPress={handleDeleteCard}
-              >
-                <Text
-                  style={[
-                    styles.modalButtonText,
-                    { color: "#D00" },
-                  ]}
-                >
-                  Delete
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </Pressable>
+            </Pressable>
+          </Animated.View>
+        </View>
       </Modal>
 
       {/* Rename Modal */}
@@ -514,7 +570,7 @@ export default function HomeScreen() {
           onPress={() => setIsRenameModalVisible(false)}
         >
           <View style={styles.modalContent} pointerEvents="box-none">
-            <View style={styles.modalCard}>
+            <Pressable style={styles.modalCard} onPress={() => {}}>
               <Text style={styles.modalTitle}>Rename</Text>
               <TextInput
                 placeholder="New title"
@@ -539,7 +595,7 @@ export default function HomeScreen() {
                   <Text style={styles.modalButtonText}>Save</Text>
                 </Pressable>
               </View>
-            </View>
+            </Pressable>
           </View>
         </Pressable>
       </Modal>
@@ -556,7 +612,7 @@ export default function HomeScreen() {
           onPress={() => setIsAssignFilterVisible(false)}
         >
           <View style={styles.modalContent} pointerEvents="box-none">
-            <View style={styles.modalCard}>
+            <Pressable style={styles.modalCard} onPress={() => {}}>
               <Text style={styles.modalTitle}>Assign Filter</Text>
               <ScrollView style={{ maxHeight: 200 }}>
                 {filters
@@ -583,7 +639,7 @@ export default function HomeScreen() {
               >
                 <Text style={styles.modalButtonText}>Close</Text>
               </Pressable>
-            </View>
+            </Pressable>
           </View>
         </Pressable>
       </Modal>
@@ -599,32 +655,57 @@ const styles = StyleSheet.create({
   contentContainer: {
     flex: 1,
   },
+  brandBar: {
+    backgroundColor: "#FFFFFF",
+    paddingTop: 10,
+    paddingBottom: 2,
+    paddingHorizontal: 16,
+  },
+  fixedControls: {
+    backgroundColor: "#FFFFFF",
+    paddingTop: 6,
+    paddingBottom: 8,
+  },
   button: {
-    height: 32,
-    width: 32,
+    height: 36,
+    width: 36,
     backgroundColor: "#212121",
-    borderRadius: 16,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   buttonRow: {
     flexDirection: "row",
-    backgroundColor: "#E4E4E4",
-    borderColor: "#E6E6E6",
-    borderRadius: 12,
+    backgroundColor: "#F2F3F5",
+    borderColor: "#E7E8EB",
+    borderRadius: 999,
     borderWidth: 1,
     paddingVertical: 8,
     paddingHorizontal: 12,
     marginRight: 8,
     alignItems: "center",
   },
+  buttonRowActive: {
+    backgroundColor: "#111111",
+    borderColor: "#111111",
+  },
+  addChip: {
+    height: 34,
+    width: 34,
+    borderRadius: 17,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E7E8EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headerColumn: {
-    marginBottom: 20,
-    marginHorizontal: 16,
+    paddingHorizontal: 16,
   },
   listContent: {
     paddingHorizontal: 16,
     paddingBottom: 100,
+    paddingTop: 6,
   },
   column3: {
     backgroundColor: "#FFFFFF",
@@ -697,9 +778,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     borderRadius: 15,
-    marginTop: 10,
-    marginBottom: 10,
-    marginHorizontal: 16,
+    marginBottom: 6,
   },
   row2: {
     flexDirection: "row",
@@ -708,10 +787,11 @@ const styles = StyleSheet.create({
   row3: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F0F0F0",
+    backgroundColor: "#F3F4F6",
     borderRadius: 16,
-    marginBottom: 16,
+    marginBottom: 10,
     height: 44,
+    paddingHorizontal: 12,
   },
   row4: {
     flexDirection: "row",
@@ -721,11 +801,18 @@ const styles = StyleSheet.create({
   filtersScroll: {
     flexGrow: 0,
   },
+  filtersContent: {
+    paddingRight: 10,
+  },
   row5: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 8,
+  },
+  cardKebabButton: {
+    paddingLeft: 10,
+    paddingVertical: 2,
   },
   row6: {
     flexDirection: "row",
@@ -736,10 +823,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginRight: 16,
+    gap: 6,
   },
   row8: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 3,
   },
   row9: {
     flexDirection: "row",
@@ -752,9 +841,15 @@ const styles = StyleSheet.create({
   },
   text: {
     color: "#000000",
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 20,
+    fontWeight: "800",
     fontFamily: "System",
+  },
+  subtitle: {
+    marginTop: -2,
+    color: "#6B6B70",
+    fontSize: 11,
+    fontWeight: "500",
   },
   text2: {
     color: "#FFFFFF",
@@ -764,12 +859,12 @@ const styles = StyleSheet.create({
   text3: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   text4: {
-    color: "#4D4D4D",
+    color: "#2C2C2E",
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   text5: {
     color: "#000000",
@@ -786,16 +881,22 @@ const styles = StyleSheet.create({
   view: {
     justifyContent: "center",
   },
+  searchIcon: {
+    marginRight: 8,
+  },
   view2: {
-    backgroundColor: "#F7F7F7",
-    borderRadius: 6,
-    padding: 6,
+    backgroundColor: "#F8F8F8",
+    borderRadius: 8,
+    padding: 8,
     marginRight: 8,
   },
   view3: {
-    backgroundColor: "#F7F7F7",
-    borderRadius: 6,
-    padding: 6,
+    backgroundColor: "#F8F8F8",
+    borderRadius: 8,
+    padding: 8,
+  },
+  cardContentArea: {
+    flex: 1,
   },
   fabWrapper: {
     position: "absolute",
@@ -837,6 +938,40 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   fabMenuText: { color: "#FFF", fontWeight: "600" },
+  contextMenuRoot: {
+    flex: 1,
+  },
+  contextMenuBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.12)",
+  },
+  contextMenuPressable: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  contextMenu: {
+    position: "absolute",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    minWidth: 150,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+    overflow: "hidden",
+  },
+  contextMenuItem: {
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F2F2F2",
+  },
+  contextMenuItemText: {
+    color: "#1C1C1E",
+    fontWeight: "500",
+    fontSize: 15,
+    letterSpacing: 0.3,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
@@ -870,7 +1005,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   modalActions: { flexDirection: "row", justifyContent: "flex-end" },
-  modalButton: { paddingVertical: 10 },
+  modalButton: { paddingVertical: 10, paddingHorizontal: 9 },
   modalButtonText: {
     color: "#1C1C1E",
     fontWeight: "600",
