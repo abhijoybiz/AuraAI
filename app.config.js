@@ -1,16 +1,18 @@
 // Load environment variables
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
 // Debug logging
 console.log('Loading app.config.js...');
 console.log('DEEPGRAM_API_KEY:', DEEPGRAM_API_KEY ? '✓ Loaded' : '✗ Missing');
 console.log('OPENROUTER_API_KEY:', OPENROUTER_API_KEY ? '✓ Loaded' : '✗ Missing');
+console.log('API_BASE_URL:', API_BASE_URL);
 
 module.exports = {
   expo: {
-    name: "Expo App",
-    slug: "expo-app",
+    name: "Memry",
+    slug: "memry",
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/logo.png",
@@ -38,7 +40,8 @@ module.exports = {
     },
     extra: {
       deepgramApiKey: DEEPGRAM_API_KEY,
-      openrouterApiKey: OPENROUTER_API_KEY
+      openrouterApiKey: OPENROUTER_API_KEY,
+      apiBaseUrl: API_BASE_URL
     }
   }
 };
