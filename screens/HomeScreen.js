@@ -1,1015 +1,1596 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
-  ScrollView,
-  Image,
   Text,
-  TouchableOpacity,
-  TextInput,
   StyleSheet,
+  SafeAreaView,
+  TextInput,
+  ScrollView,
   FlatList,
-  Dimensions,
-  Animated,
-  Easing,
+  TouchableOpacity,
   Modal,
   Pressable,
   Alert,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { MOCK_DATA, FILTERS } from "../constants/mockData";
-import { SafeAreaView } from "react-native-safe-area-context";
+  Animated,
+  KeyboardAvoidingView,
+  Platform,
+  Image
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Feather } from '@expo/vector-icons';
+import { StatusBar } from 'expo-status-bar';
+import * as DocumentPicker from 'expo-document-picker';
+import { Audio } from 'expo-av';
+import { useTheme } from '../context/ThemeContext';
+import { SPACING } from '../constants/theme';
 
-const { width } = Dimensions.get("window");
+// Storage keys
+const STORAGE_KEYS = {
+  CARDS: '@memry_cards',
+  FILTERS: '@memry_filters'
+};
 
-export default function HomeScreen() {
-  const [textInput1, setTextInput1] = useState("");
-  const [activeFilter, setActiveFilter] = useState("All");
-  const [filters, setFilters] = useState(FILTERS);
-  const [cards, setCards] = useState(MOCK_DATA);
+// Default filters
+const DEFAULT_FILTERS = [
+  { id: 'all', name: 'All', icon: null, isDefault: true },
+  { id: 'favorites', name: 'Favorites', icon: 'star', isDefault: true }
+];
 
-  const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
-  const [newFilterName, setNewFilterName] = useState("");
+// Initial mock data
+const INITIAL_DATA = [
+  { id: '1', title: 'Atomic bombshell in call of duty', date: 'Jan 24 2025', duration: '15min', isFavorite: true, filterIds: [] },
+  { id: '2', title: 'Quantum mechanics explained', date: 'Jan 23 2025', duration: '45min', isFavorite: false, filterIds: [] },
+  { id: '3', title: 'React Native Performance Tips', date: 'Jan 22 2025', duration: '12min', isFavorite: false, filterIds: [] },
+  { id: '4', title: 'The history of the internet', date: 'Jan 20 2025', duration: '28min', isFavorite: true, filterIds: [] },
+];
 
-  const [selectedCard, setSelectedCard] = useState(null);
-  const [isCardMenuVisible, setIsCardMenuVisible] = useState(false);
-  const [cardMenuPosition, setCardMenuPosition] = useState({ x: 0, y: 0 });
-  const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
-  const [renameValue, setRenameValue] = useState("");
-  const [isAssignFilterVisible, setIsAssignFilterVisible] = useState(false);
+// Available icons for filters (Lucide/Feather icons)
+const AVAILABLE_ICONS = [
+  'bookmark', 'book', 'briefcase', 'code', 'coffee', 'globe',
+  'heart', 'music', 'target', 'zap', 'umbrella', 'trending-up',
+  'tag', 'sun', 'shield', 'package', 'map', 'layers',
+  'home', 'gift', 'flag', 'cpu', 'cloud', 'camera'
+];
 
-  const [isAccountModalVisible, setIsAccountModalVisible] = useState(false);
-  const [accountMenuPosition, setAccountMenuPosition] = useState({ x: 0, y: 0 });
+export default function HomeScreen({ navigation }) {
+  const { colors, isDark } = useTheme();
 
-  // FAB State
+  // State
+  const [cards, setCards] = useState([]);
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isFabExpanded, setIsFabExpanded] = useState(false);
+  const [selectedCard, setSelectedCard] = useState(null);
+  const [showCardMenu, setShowCardMenu] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showNewFilterModal, setShowNewFilterModal] = useState(false);
+  const [renameText, setRenameText] = useState('');
+  const [newFilterName, setNewFilterName] = useState('');
+  const [newFilterIcon, setNewFilterIcon] = useState('bookmark');
+
+  // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fabRotation = useRef(new Animated.Value(0)).current;
+  const fabScale = useRef(new Animated.Value(1)).current;
 
-  // Menu Animations - Separate for each menu
-  const accountMenuAnim = useRef(new Animated.Value(0)).current;
-  const accountBackdropAnim = useRef(new Animated.Value(0)).current;
-  const cardMenuAnim = useRef(new Animated.Value(0)).current;
-  const cardBackdropAnim = useRef(new Animated.Value(0)).current;
-
-  // FAB Animation
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: isFabExpanded ? 1 : 0,
-      duration: 200,
-      easing: Easing.ease,
-    }).start();
-  }, [isFabExpanded]);
-
-  const animateContextMenuOpen = (menuAnim, backdropAnim) => {
-    menuAnim.setValue(0);
-    backdropAnim.setValue(0);
-    Animated.parallel([
-      Animated.timing(backdropAnim, {
-        toValue: 1,
-        duration: 160,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-      Animated.timing(menuAnim, {
-        toValue: 1,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  const animateContextMenuClose = (menuAnim, backdropAnim, onDone) => {
-    Animated.parallel([
-      Animated.timing(menuAnim, {
-        toValue: 0,
-        duration: 160,
-        easing: Easing.in(Easing.quad),
-        useNativeDriver: true,
-      }),
-      Animated.timing(backdropAnim, {
-        toValue: 0,
-        duration: 160,
-        easing: Easing.in(Easing.quad),
-        useNativeDriver: true,
-      }),
-    ]).start(({ finished }) => {
-      if (finished) onDone?.();
-    });
-  };
-
-  const filteredData = cards.filter((item) => {
-    const matchesSearch = item.title
-      .toLowerCase()
-      .includes(textInput1.toLowerCase());
-    if (activeFilter === "All") return matchesSearch;
-    if (activeFilter === "Favorites") return matchesSearch && item.isFavorite;
-    return matchesSearch && item.category === activeFilter;
-  });
-
-  const handleAddFilter = () => {
-    setNewFilterName("");
-    setIsFilterModalVisible(true);
-  };
-
-  const saveNewFilter = () => {
-    const name = newFilterName.trim();
-    if (!name) {
-      Alert.alert("Filter name required");
-      return;
-    }
-    if (filters.includes(name)) {
-      Alert.alert("Filter already exists");
-      return;
-    }
-    const updated = [...filters, name];
-    setFilters(updated);
-    setIsFilterModalVisible(false);
-    setActiveFilter(name);
-  };
-
-  const toggleFavorite = (id) => {
-    setCards((prev) =>
-      prev.map((card) =>
-        card.id === id ? { ...card, isFavorite: !card.isFavorite } : card
-      )
-    );
-  };
-
-  const openAccountMenu = (event) => {
-    if (event && event.nativeEvent) {
-      setAccountMenuPosition({
-        x: event.nativeEvent.pageX,
-        y: event.nativeEvent.pageY,
-      });
-    }
-    setIsAccountModalVisible(true);
-    requestAnimationFrame(() =>
-      animateContextMenuOpen(accountMenuAnim, accountBackdropAnim)
-    );
-  };
-
-  const closeAccountMenu = () => {
-    animateContextMenuClose(accountMenuAnim, accountBackdropAnim, () =>
-      setIsAccountModalVisible(false)
-    );
-  };
-
-  const openCardMenu = (card, event) => {
-    setSelectedCard(card);
-    if (event && event.nativeEvent) {
-      setCardMenuPosition({
-        x: event.nativeEvent.pageX,
-        y: event.nativeEvent.pageY,
-      });
-    }
-    setIsCardMenuVisible(true);
-    requestAnimationFrame(() =>
-      animateContextMenuOpen(cardMenuAnim, cardBackdropAnim)
-    );
-  };
-
-  const closeCardMenu = () => {
-    animateContextMenuClose(cardMenuAnim, cardBackdropAnim, () =>
-      setIsCardMenuVisible(false)
-    );
-  };
-
-  const handleDeleteCard = () => {
-    if (!selectedCard) return;
-    setCards((prev) =>
-      prev.filter((card) => card.id !== selectedCard.id)
-    );
-    setIsCardMenuVisible(false);
-  };
-
-  const handleRenameCard = () => {
-    if (!selectedCard) return;
-    setRenameValue(selectedCard.title);
-    setIsCardMenuVisible(false);
-    setIsRenameModalVisible(true);
-  };
-
-  const saveRename = () => {
-    const name = renameValue.trim();
-    if (!name) {
-      Alert.alert("Title required");
-      return;
-    }
-    setCards((prev) =>
-      prev.map((card) =>
-        card.id === selectedCard.id ? { ...card, title: name } : card
-      )
-    );
-    setIsRenameModalVisible(false);
-  };
-
-  const openAssignFilter = () => {
-    setIsCardMenuVisible(false);
-    setIsAssignFilterVisible(true);
-  };
-
-  const assignFilterToCard = (filterName) => {
-    if (!selectedCard) return;
-    setCards((prev) =>
-      prev.map((card) =>
-        card.id === selectedCard.id ? { ...card, category: filterName } : card
-      )
-    );
-    setIsAssignFilterVisible(false);
-  };
-
-  const renderItem = ({ item }) => (
-    <View style={styles.column3}>
-      <View style={styles.row5}>
-        <Text style={styles.text5} numberOfLines={1}>
-          {item.title}
-        </Text>
-        <TouchableOpacity
-          style={styles.cardKebabButton}
-          onPress={(e) => openCardMenu(item, e)}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="ellipsis-horizontal" size={18} color="#6B6B70" />
-        </TouchableOpacity>
-      </View>
-      <TouchableOpacity
-        style={styles.cardContentArea}
-        onPress={() => alert(`Opening ${item.title}`)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.row6}>
-          <View style={styles.row7}>
-            <Ionicons name="calendar-outline" size={14} color="#6B6B70" />
-            <Text style={styles.text6}>{item.date}</Text>
-          </View>
-          <View style={styles.row8}>
-            <Ionicons name="time-outline" size={14} color="#6B6B70" />
-            <Text style={styles.text6}>{item.duration}</Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-      <View style={styles.row9}>
-        <View style={styles.row10}>
-          <TouchableOpacity
-            style={styles.view2}
-            onPress={() => toggleFavorite(item.id)}
-          >
-            <Ionicons 
-              name={item.isFavorite ? "heart" : "heart-outline"} 
-              size={18} 
-              color={item.isFavorite ? "#e67e22" : "#555"}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.view3}
-            onPress={() => alert("Share clicked")}
-          >
-            <Ionicons 
-              name="share-outline" 
-              size={18} 
-              color="#555"
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
+  // Load data on mount and focus
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [])
   );
 
-  return (
-    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      <View style={styles.contentContainer}>
-        {/* Fixed top brand header */}
-            <View style={styles.brandBar}>
-              <View style={styles.row}>
-                <View style={styles.row2}>
-                  <Image
-                source={require("../assets/logo.png")}
-                resizeMode={"stretch"}
-                style={styles.image}
-                  />
-                  <View style={styles.view}>
-                <Text style={styles.text}>{"Memry"}</Text>
-                <Text style={styles.subtitle}>AI notes from lectures</Text>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  style={styles.button}
-                  onPress={openAccountMenu}
-                  activeOpacity={0.85}
-                >
-              <Text style={styles.text2}>{"S"}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+  // Save data whenever it changes
+  useEffect(() => {
+    if (cards.length > 0) {
+      saveCards();
+    }
+  }, [cards]);
 
-        {/* Fixed controls (slightly lower) */}
-        <View style={styles.fixedControls}>
-          <View style={styles.headerColumn}>
-            <View style={styles.row3}>
-              <Ionicons name="search" size={16} color="#666" style={styles.searchIcon} />
-              <TextInput
-                placeholder={"Search"}
-                value={textInput1}
-                onChangeText={setTextInput1}
-                style={styles.input}
-                placeholderTextColor="#8E8E93"
-                returnKeyType="search"
-                clearButtonMode="while-editing"
-              />
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.filtersScroll}
-              contentContainerStyle={styles.filtersContent}
-            >
-              <View style={styles.row4}>
-                {filters.map((filter) => (
-                  <TouchableOpacity
-                    key={filter}
-                    style={[
-                      styles.buttonRow,
-                      activeFilter === filter && styles.buttonRowActive,
-                    ]}
-                    onPress={() => setActiveFilter(filter)}
-                    activeOpacity={0.85}
-                  >
-                    <Text
-                      style={activeFilter === filter ? styles.text3 : styles.text4}
-                      numberOfLines={1}
-                    >
-                      {filter}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-                <TouchableOpacity onPress={handleAddFilter} activeOpacity={0.85}>
-                  <View style={styles.addChip}>
-                    <Ionicons name="add" size={18} color="#111" />
-                  </View>
-                </TouchableOpacity>
+  useEffect(() => {
+    if (filters.length > DEFAULT_FILTERS.length) {
+      saveFilters();
+    }
+  }, [filters]);
+
+  // Animate modals
+  useEffect(() => {
+    if (showAccountMenu || showCardMenu || showRenameModal || showFilterModal || showNewFilterModal) {
+      fadeAnim.setValue(0);
+      Animated.spring(fadeAnim, {
+        toValue: 1,
+        tension: 100,
+        friction: 8,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [showAccountMenu, showCardMenu, showRenameModal, showFilterModal, showNewFilterModal]);
+
+  const closeWithAnimation = (setter) => {
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start(() => setter(false));
+  };
+
+  // Animate FAB
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(fabRotation, {
+        toValue: isFabExpanded ? 1 : 0,
+        tension: 80,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+      Animated.spring(fabScale, {
+        toValue: isFabExpanded ? 1.1 : 1,
+        tension: 150,
+        friction: 7,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, [isFabExpanded]);
+
+  const fabRotationInterpolate = fabRotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '45deg']
+  });
+
+  // Background refresh for preparing cards
+  useEffect(() => {
+    const hasPreparingCards = cards.some(card => card.status === 'preparing');
+    if (hasPreparingCards) {
+      const interval = setInterval(() => {
+        loadData();
+      }, 3000); // Check every 3 seconds
+      return () => clearInterval(interval);
+    }
+  }, [cards]);
+
+  // Data persistence functions - ASYNC STORAGE FULLY IMPLEMENTED
+  const loadData = async () => {
+    try {
+      const storedCards = await AsyncStorage.getItem(STORAGE_KEYS.CARDS);
+      const storedFilters = await AsyncStorage.getItem(STORAGE_KEYS.FILTERS);
+
+      if (storedCards) {
+        setCards(JSON.parse(storedCards));
+      } else {
+        setCards(INITIAL_DATA);
+        await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(INITIAL_DATA));
+      }
+
+      if (storedFilters) {
+        const customFilters = JSON.parse(storedFilters);
+        setFilters([...DEFAULT_FILTERS, ...customFilters]);
+      }
+    } catch (error) {
+      console.error('Error loading data:', error);
+      setCards(INITIAL_DATA);
+    }
+  };
+
+  const saveCards = async () => {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(cards));
+    } catch (error) {
+      console.error('Error saving cards:', error);
+    }
+  };
+
+  const saveFilters = async () => {
+    try {
+      const customFilters = filters.filter(f => !f.isDefault);
+      await AsyncStorage.setItem(STORAGE_KEYS.FILTERS, JSON.stringify(customFilters));
+    } catch (error) {
+      console.error('Error saving filters:', error);
+    }
+  };
+
+  // Filter logic
+  const getFilteredCards = () => {
+    let filtered = cards;
+
+    if (activeFilter === 'favorites') {
+      filtered = filtered.filter(card => card.isFavorite);
+    } else if (activeFilter !== 'all') {
+      filtered = filtered.filter(card => card.filterIds?.includes(activeFilter));
+    }
+
+    if (searchQuery.trim()) {
+      filtered = filtered.filter(card =>
+        card.title.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    return filtered;
+  };
+
+  // Check if filter name is duplicate
+  const isDuplicateFilterName = (name) => {
+    const trimmedName = name.trim().toLowerCase();
+    return filters.some(f => f.name.toLowerCase() === trimmedName);
+  };
+
+  // Card actions
+  const toggleFavorite = (cardId) => {
+    setCards(cards.map(card =>
+      card.id === cardId ? { ...card, isFavorite: !card.isFavorite } : card
+    ));
+  };
+
+  const deleteCard = (cardId) => {
+    Alert.alert(
+      'Delete Card',
+      'Are you sure you want to delete this card?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setCards(cards.filter(card => card.id !== cardId));
+            setShowCardMenu(false);
+          }
+        }
+      ]
+    );
+  };
+
+  const renameCard = () => {
+    if (renameText.trim()) {
+      setCards(cards.map(card =>
+        card.id === selectedCard.id ? { ...card, title: renameText.trim() } : card
+      ));
+      setShowRenameModal(false);
+      setShowCardMenu(false);
+      setRenameText('');
+    }
+  };
+
+  const assignCardToFilter = (filterId) => {
+    setCards(cards.map(card => {
+      if (card.id === selectedCard.id) {
+        const filterIds = card.filterIds || [];
+        const hasFilter = filterIds.includes(filterId);
+        return {
+          ...card,
+          filterIds: hasFilter
+            ? filterIds.filter(id => id !== filterId)
+            : [...filterIds, filterId]
+        };
+      }
+      return card;
+    }));
+  };
+
+  // Filter management
+  const createNewFilter = () => {
+    const trimmedName = newFilterName.trim();
+
+    if (!trimmedName) {
+      Alert.alert('Error', 'Please enter a filter name');
+      return;
+    }
+
+    if (isDuplicateFilterName(trimmedName)) {
+      Alert.alert('Duplicate Filter', 'A filter with this name already exists');
+      return;
+    }
+
+    const newFilter = {
+      id: `filter_${Date.now()}`,
+      name: trimmedName,
+      icon: newFilterIcon,
+      isDefault: false
+    };
+
+    setFilters([...filters, newFilter]);
+    setNewFilterName('');
+    setNewFilterIcon('bookmark');
+    closeWithAnimation(setShowNewFilterModal);
+  };
+
+  const deleteFilter = (filterId) => {
+    Alert.alert(
+      'Delete Filter',
+      'Are you sure you want to delete this filter?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            setFilters(filters.filter(f => f.id !== filterId));
+            if (activeFilter === filterId) {
+              setActiveFilter('all');
+            }
+            setCards(cards.map(card => ({
+              ...card,
+              filterIds: card.filterIds?.filter(id => id !== filterId) || []
+            })));
+          }
+        }
+      ]
+    );
+  };
+
+  // FAB actions
+  const toggleFab = () => {
+    setIsFabExpanded(!isFabExpanded);
+  };
+
+  const handleRecord = () => {
+    setIsFabExpanded(false);
+    navigation.navigate('Recording');
+  };
+
+  const handleUpload = async () => {
+    try {
+      setIsFabExpanded(false);
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'audio/*',
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+
+        // Get duration using expo-av
+        const { sound } = await Audio.Sound.createAsync({ uri: asset.uri });
+        const status = await sound.getStatusAsync();
+        const durationMillis = status.durationMillis || 0;
+        await sound.unloadAsync();
+
+        const formatTime = (millis) => {
+          const totalSeconds = millis / 1000;
+          const minutes = Math.floor(totalSeconds / 60);
+          const seconds = Math.floor(totalSeconds % 60);
+          return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        };
+
+        // Dynamic Title Generation
+        let lectureTitle = 'New Lecture';
+        try {
+          const storedCards = await AsyncStorage.getItem('@memry_cards');
+          const cards = storedCards ? JSON.parse(storedCards) : [];
+          lectureTitle = `Lecture ${cards.length + 1}`;
+        } catch (e) {
+          console.error('Error getting card count', e);
+        }
+
+        navigation.replace('Results', {
+          uri: asset.uri,
+          duration: formatTime(durationMillis),
+          date: new Date().toLocaleDateString(),
+          title: lectureTitle,
+          source: 'upload'
+        });
+      }
+    } catch (error) {
+      console.error('Error picking document:', error);
+      Alert.alert('Error', 'Failed to upload audio file.');
+    }
+  };
+
+  // Render card item
+  const renderItem = ({ item }) => {
+    const isPreparing = item.status === 'preparing';
+    const progress = item.progress || 0;
+
+    return (
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => {
+          navigation.navigate('Results', {
+            id: item.id,
+            uri: item.uri,
+            duration: item.duration,
+            date: item.date,
+            title: item.title,
+            source: item.source,
+            initialProgress: item.progress || 0.1,
+            initialStatus: item.status || 'ready'
+          });
+        }}
+        style={[
+          styles.card,
+          { backgroundColor: colors.card, borderColor: colors.border },
+          isPreparing && { opacity: 0.8 }
+        ]}
+      >
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>
+              {item.title}
+            </Text>
+            {isPreparing && (
+              <View style={[styles.statusBadge, { backgroundColor: colors.tint }]}>
+                <Text style={[styles.statusBadgeText, { color: colors.textSecondary }]}>PREPARING</Text>
               </View>
-            </ScrollView>
+            )}
+          </View>
+          <TouchableOpacity
+            disabled={isPreparing}
+            onPress={() => {
+              setSelectedCard(item);
+              setShowCardMenu(true);
+            }}
+          >
+            <Feather name="more-horizontal" size={20} color={isPreparing ? colors.border : colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.cardMeta}>
+          <View style={styles.metaRow}>
+            <Feather name="calendar" size={14} color={colors.textSecondary} />
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{item.date}</Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Feather name="activity" size={14} color={colors.textSecondary} />
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{item.duration}</Text>
           </View>
         </View>
-
-        <FlatList
-          data={filteredData}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
-      </View>
-
-      {/* FAB */}
-      <View style={styles.fabWrapper}>
-        <Animated.View style={{ opacity: fadeAnim }}>
-          <View style={styles.fabMenuContainer}>
-            <TouchableOpacity
-              style={styles.fabMenuItem}
-              onPress={() => alert("Upload pressed")}
-            >
-              <Ionicons name="cloud-upload" size={16} color="#FFF" />
-              <Text style={styles.fabMenuText}>Upload</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.fabMenuItem}
-              onPress={() => alert("Record pressed")}
-            >
-              <Ionicons name="mic" size={16} color="#FFF" />
-              <Text style={styles.fabMenuText}>Record</Text>
-            </TouchableOpacity>
+        <View style={styles.cardActions}>
+          <View style={styles.actionIcons}>
+            {item.source === 'upload' ? (
+              <View style={styles.actionIcon}>
+                <Feather name="file" size={16} color={colors.textSecondary} />
+              </View>
+            ) : (
+              <View style={styles.actionIcon}>
+                <Feather name="mic" size={16} color={colors.textSecondary} />
+              </View>
+            )}
           </View>
-        </Animated.View>
+          <TouchableOpacity
+            disabled={isPreparing}
+            onPress={() => toggleFavorite(item.id)}
+          >
+            {item.isFavorite ? (
+              <Feather name="star" size={18} color="#000" fill="#000" />
+            ) : (
+              <Feather name="star" size={18} color={isPreparing ? colors.border : colors.textSecondary} />
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {isPreparing && (
+          <View style={styles.progressBarContainer}>
+            <View style={[styles.progressBar, { width: `${progress * 100}%`, backgroundColor: colors.primary }]} />
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar style={isDark ? "light" : "dark"} />
+
+      {/* Reinvented Polished Header */}
+      <View style={styles.header}>
+        <View style={styles.brandMark}>
+          <View style={[styles.logoPulse, { backgroundColor: colors.tint }]}>
+            <Image source={require('../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
+          </View>
+          <View>
+            <Text style={[styles.logoText, { color: colors.text }]}>Memry</Text>
+            <Text style={[styles.logoSubtext, { color: colors.textSecondary }]}>LECTURES SIMPLIFIED</Text>
+          </View>
+        </View>
         <TouchableOpacity
-          style={styles.fab}
-          onPress={() => setIsFabExpanded(!isFabExpanded)}
+          style={[styles.accountPill, { backgroundColor: colors.tint, borderColor: colors.border }]}
+          onPress={() => setShowAccountMenu(true)}
+          activeOpacity={0.7}
         >
-          <Ionicons
-            name={isFabExpanded ? "close" : "add"}
-            size={24}
-            color="#FFF"
-          />
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>O</Text>
+          </View>
+          <Feather name="chevron-down" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} />
         </TouchableOpacity>
       </View>
 
-      {/* Account Settings Modal */}
-      <Modal
-        transparent
-        animationType="none"
-        visible={isAccountModalVisible}
-        onRequestClose={closeAccountMenu}
-      >
-        <View style={styles.contextMenuRoot}>
-          <Animated.View
-            style={[styles.contextMenuBackdrop, { opacity: accountBackdropAnim }]}
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <View style={[styles.searchBar, { backgroundColor: colors.inputBackground }]}>
+          <Feather name="search" size={20} color={colors.textSecondary} />
+          <TextInput
+            placeholder="Search"
+            placeholderTextColor={colors.textSecondary}
+            style={[styles.searchInput, { color: colors.text }]}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
           />
-          <Pressable style={styles.contextMenuPressable} onPress={closeAccountMenu} />
-          <Animated.View
-            style={[
-              styles.contextMenu,
-              {
-                top: accountMenuPosition.y + 5,
-                right: 20,
-                opacity: accountMenuAnim,
-                transform: [
-                  {
-                    scale: accountMenuAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.75, 1],
-                    }),
-                  },
-                  {
-                    translateY: accountMenuAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [-10, 0],
-                    }),
-                  },
-                ],
-              },
-            ]}
-            onStartShouldSetResponder={() => true}
-          >
-            <Pressable
-              style={styles.contextMenuItem}
-              onPress={() => {
-                Alert.alert("Profile");
-                closeAccountMenu();
-              }}
-            >
-              <Text style={styles.contextMenuItemText}>Profile</Text>
-            </Pressable>
-            <Pressable
-              style={styles.contextMenuItem}
-              onPress={() => {
-                Alert.alert("Notifications");
-                closeAccountMenu();
-              }}
-            >
-              <Text style={styles.contextMenuItemText}>Notifications</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.contextMenuItem, { borderBottomWidth: 0 }]}
-              onPress={() => {
-                Alert.alert("Logged out");
-                closeAccountMenu();
-              }}
-            >
-              <Text style={styles.contextMenuItemText}>Logout</Text>
-            </Pressable>
-          </Animated.View>
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Feather name="x" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
         </View>
-      </Modal>
+      </View>
 
-      {/* Add Filter Modal */}
-      <Modal
-        transparent
-        animationType="fade"
-        visible={isFilterModalVisible}
-        onRequestClose={() => setIsFilterModalVisible(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setIsFilterModalVisible(false)}
-        >
-          <View style={styles.modalContent} pointerEvents="box-none">
-            <Pressable style={styles.modalCard} onPress={() => {}}>
-              <Text style={styles.modalTitle}>New Filter</Text>
-              <TextInput
-                placeholder="Filter name"
-                placeholderTextColor="#888"
-                value={newFilterName}
-                onChangeText={setNewFilterName}
-                style={styles.modalInput}
-              />
-              <View style={styles.modalActions}>
-                <Pressable
-                  style={styles.modalButton}
-                  onPress={() =>
-                    setIsFilterModalVisible(false)
-                  }
-                >
-                  <Text style={styles.modalButtonText}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.modalButton}
-                  onPress={saveNewFilter}
-                >
-                  <Text style={styles.modalButtonText}>Save</Text>
-                </Pressable>
-              </View>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
-
-      {/* Card Menu Modal */}
-      <Modal
-        transparent
-        animationType="none"
-        visible={isCardMenuVisible}
-        onRequestClose={closeCardMenu}
-      >
-        <View style={styles.contextMenuRoot}>
-          <Animated.View
-            style={[styles.contextMenuBackdrop, { opacity: cardBackdropAnim }]}
-          />
-          <Pressable style={styles.contextMenuPressable} onPress={closeCardMenu} />
-          <Animated.View
-            style={[
-              styles.contextMenu,
-              {
-                top: cardMenuPosition.y + 5,
-                right: 20,
-                opacity: cardMenuAnim,
-                transform: [
-                  {
-                    scale: cardMenuAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.75, 1],
-                    }),
-                  },
-                  {
-                    translateY: cardMenuAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [-10, 0],
-                    }),
-                  },
-                ],
-              },
-            ]}
-            onStartShouldSetResponder={() => true}
-          >
-            <Pressable style={styles.contextMenuItem} onPress={handleRenameCard}>
-              <Text style={styles.contextMenuItemText}>Rename</Text>
-            </Pressable>
-            <Pressable style={styles.contextMenuItem} onPress={openAssignFilter}>
-              <Text style={styles.contextMenuItemText}>Assign Filter</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.contextMenuItem, { borderBottomWidth: 0 }]}
-              onPress={handleDeleteCard}
+      {/* Filters */}
+      <View style={styles.filterContainer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+          {filters.map((filter) => (
+            <TouchableOpacity
+              key={filter.id}
+              style={[
+                styles.filterChip,
+                { backgroundColor: activeFilter === filter.id ? colors.primary : colors.tint }
+              ]}
+              onPress={() => setActiveFilter(filter.id)}
+              onLongPress={() => !filter.isDefault && deleteFilter(filter.id)}
             >
-              <Text style={[styles.contextMenuItemText, { color: "#D00" }]}>
-                Delete
+              {filter.icon && (
+                <Feather
+                  name={filter.icon}
+                  size={14}
+                  color={activeFilter === filter.id ? colors.card : colors.text}
+                />
+              )}
+              <Text style={[
+                styles.filterText,
+                { color: activeFilter === filter.id ? colors.card : colors.text }
+              ]}>
+                {filter.name}
               </Text>
-            </Pressable>
-          </Animated.View>
-        </View>
-      </Modal>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity
+            style={[styles.filterChip, { backgroundColor: colors.tint, width: 40, justifyContent: 'center', paddingHorizontal: 0 }]}
+            onPress={() => setShowNewFilterModal(true)}
+          >
+            <Feather name="plus" size={16} color={colors.text} />
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
 
-      {/* Rename Modal */}
-      <Modal
-        transparent
-        animationType="fade"
-        visible={isRenameModalVisible}
-        onRequestClose={() => setIsRenameModalVisible(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setIsRenameModalVisible(false)}
-        >
-          <View style={styles.modalContent} pointerEvents="box-none">
-            <Pressable style={styles.modalCard} onPress={() => {}}>
-              <Text style={styles.modalTitle}>Rename</Text>
-              <TextInput
-                placeholder="New title"
-                placeholderTextColor="#888"
-                value={renameValue}
-                onChangeText={setRenameValue}
-                style={styles.modalInput}
-              />
-              <View style={styles.modalActions}>
-                <Pressable
-                  style={styles.modalButton}
-                  onPress={() =>
-                    setIsRenameModalVisible(false)
-                  }
-                >
-                  <Text style={styles.modalButtonText}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.modalButton}
-                  onPress={saveRename}
-                >
-                  <Text style={styles.modalButtonText}>Save</Text>
-                </Pressable>
-              </View>
-            </Pressable>
+      {/* Cards List */}
+      <FlatList
+        data={getFilteredCards()}
+        renderItem={renderItem}
+        keyExtractor={item => item.id}
+        contentContainerStyle={styles.listContent}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Feather name="inbox" size={48} color={colors.textSecondary} style={{ opacity: 0.5 }} />
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              {searchQuery ? 'No cards found' : 'No cards yet'}
+            </Text>
           </View>
-        </Pressable>
-      </Modal>
+        }
+      />
 
-      {/* Assign Filter Modal */}
-      <Modal
-        transparent
-        animationType="fade"
-        visible={isAssignFilterVisible}
-        onRequestClose={() => setIsAssignFilterVisible(false)}
+      {/* FAB Menu */}
+      {isFabExpanded && (
+        <View style={styles.fabMenu}>
+          <TouchableOpacity style={[styles.fabMenuItem, { backgroundColor: colors.primary }]} onPress={handleUpload}>
+            <Text style={{ color: colors.card, fontWeight: '600' }}>Files</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.fabMenuItem, { backgroundColor: colors.primary }]} onPress={handleRecord}>
+            <Text style={{ color: colors.card, fontWeight: '600' }}>Record</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* FAB - Animated */}
+      <Animated.View
+        style={[
+          styles.fab,
+          {
+            backgroundColor: isFabExpanded ? colors.card : colors.primary,
+            borderWidth: isFabExpanded ? 1 : 0,
+            borderColor: colors.border,
+            transform: [
+              { rotate: fabRotationInterpolate },
+              { scale: fabScale }
+            ]
+          }
+        ]}
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setIsAssignFilterVisible(false)}
+        <TouchableOpacity
+          style={styles.fabButton}
+          onPress={toggleFab}
         >
-          <View style={styles.modalContent} pointerEvents="box-none">
-            <Pressable style={styles.modalCard} onPress={() => {}}>
-              <Text style={styles.modalTitle}>Assign Filter</Text>
-              <ScrollView style={{ maxHeight: 200 }}>
-                {filters
-                  .filter((f) => f !== "All" && f !== "Favorites")
-                  .map((filter) => (
-                    <Pressable
-                      key={filter}
-                      style={styles.modalButton}
-                      onPress={() =>
-                        assignFilterToCard(filter)
-                      }
-                    >
-                      <Text style={styles.modalButtonText}>
-                        {filter}
-                      </Text>
-                    </Pressable>
-                  ))}
-              </ScrollView>
-              <Pressable
-                style={styles.modalButton}
-                onPress={() =>
-                  setIsAssignFilterVisible(false)
+          <Feather name="plus" size={24} color={isFabExpanded ? colors.text : colors.card} />
+        </TouchableOpacity>
+      </Animated.View>
+
+      <Modal
+        visible={showCardMenu}
+        transparent
+        animationType="none"
+        onRequestClose={() => closeWithAnimation(setShowCardMenu)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => closeWithAnimation(setShowCardMenu)}>
+          <Animated.View
+            style={[
+              styles.contextMenu,
+              {
+                backgroundColor: colors.card,
+                opacity: fadeAnim,
+                transform: [{
+                  scale: fadeAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.9, 1]
+                  })
+                }]
+              }
+            ]}
+          >
+            <View style={styles.contextMenuHeader}>
+              <Text style={[styles.contextMenuTitle, { color: colors.text }]}>Card Actions</Text>
+            </View>
+
+            <View style={styles.contextMenuSection}>
+              <TouchableOpacity
+                style={styles.contextMenuItem}
+                onPress={() => {
+                  setRenameText(selectedCard?.title || '');
+                  setShowRenameModal(true);
+                }}
+              >
+                <View style={[styles.contextMenuIconBox, { backgroundColor: colors.tint }]}>
+                  <Feather name="edit-2" size={18} color={colors.text} />
+                </View>
+                <View style={styles.contextMenuTextContainer}>
+                  <Text style={[styles.contextMenuItemText, { color: colors.text }]}>Rename</Text>
+                  <Text style={[styles.contextMenuItemDesc, { color: colors.textSecondary }]}>
+                    Change card title
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.contextMenuItem}
+                onPress={() => setShowFilterModal(true)}
+              >
+                <View style={[styles.contextMenuIconBox, { backgroundColor: colors.tint }]}>
+                  <Feather name="tag" size={18} color={colors.text} />
+                </View>
+                <View style={styles.contextMenuTextContainer}>
+                  <Text style={[styles.contextMenuItemText, { color: colors.text }]}>Assign Filter</Text>
+                  <Text style={[styles.contextMenuItemDesc, { color: colors.textSecondary }]}>
+                    Organize with filters
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.contextMenuItem}
+                onPress={() => {
+                  toggleFavorite(selectedCard.id);
+                  closeWithAnimation(setShowCardMenu);
+                }
                 }
               >
-                <Text style={styles.modalButtonText}>Close</Text>
-              </Pressable>
-            </Pressable>
-          </View>
+                <View style={[styles.contextMenuIconBox, { backgroundColor: colors.tint }]}>
+                  {selectedCard?.isFavorite ? (
+                    <Feather name="star" size={16} color="#000" fill="#000" />
+                  ) : (
+                    <Feather name="star" size={16} color={colors.text} />
+                  )}
+                </View>
+                <View style={styles.contextMenuTextContainer}>
+                  <Text style={[styles.contextMenuItemText, { color: colors.text }]}>
+                    {selectedCard?.isFavorite ? 'Unfavorite' : 'Favorite'}
+                  </Text>
+                  <Text style={[styles.contextMenuItemDesc, { color: colors.textSecondary }]}>
+                    {selectedCard?.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.contextMenuDivider, { backgroundColor: colors.border }]} />
+
+            <View style={styles.contextMenuSection}>
+              <TouchableOpacity
+                style={styles.contextMenuItem}
+                onPress={() => selectedCard && deleteCard(selectedCard.id)}
+              >
+                <View style={[styles.contextMenuIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.1)' }]}>
+                  <Feather name="trash-2" size={18} color="#ef4444" />
+                </View>
+                <View style={styles.contextMenuTextContainer}>
+                  <Text style={[styles.contextMenuItemText, { color: '#ef4444' }]}>Delete Card</Text>
+                  <Text style={[styles.contextMenuItemDesc, { color: colors.textSecondary }]}>
+                    Permanently remove
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
         </Pressable>
       </Modal>
-    </SafeAreaView>
+
+      {/* Rename Modal - PRODUCTION GRADE */}
+      {/* Rename Modal - PRODUCTION GRADE */}
+      <Modal
+        visible={showRenameModal}
+        transparent
+        animationType="none"
+        onRequestClose={() => closeWithAnimation(setShowRenameModal)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <Pressable style={styles.modalOverlay} onPress={() => closeWithAnimation(setShowRenameModal)}>
+            <Pressable style={[styles.modernDialog, { backgroundColor: colors.card }]}>
+              <View style={styles.modernDialogHeader}>
+                <View style={[styles.modernDialogIcon, { backgroundColor: colors.tint }]}>
+                  <Feather name="edit-2" size={20} color={colors.text} />
+                </View>
+                <Text style={[styles.modernDialogTitle, { color: colors.text }]}>Rename Card</Text>
+                <Text style={[styles.modernDialogSubtitle, { color: colors.textSecondary }]}>
+                  Enter a new name for this card
+                </Text>
+              </View>
+
+              <View style={styles.modernDialogContent}>
+                <TextInput
+                  style={[
+                    styles.modernInput,
+                    {
+                      backgroundColor: colors.inputBackground,
+                      color: colors.text,
+                      borderColor: colors.border
+                    }
+                  ]}
+                  value={renameText}
+                  onChangeText={setRenameText}
+                  placeholder="Enter new name"
+                  placeholderTextColor={colors.textSecondary}
+                  autoFocus
+                />
+              </View>
+
+              <View style={styles.modernDialogActions}>
+                <TouchableOpacity
+                  style={[styles.modernButton, styles.modernButtonSecondary, { backgroundColor: colors.tint }]}
+                  onPress={() => closeWithAnimation(setShowRenameModal)}
+                >
+                  <Text style={[styles.modernButtonText, { color: colors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modernButton, styles.modernButtonPrimary, { backgroundColor: colors.primary }]}
+                  onPress={renameCard}
+                >
+                  <Text style={[styles.modernButtonText, { color: colors.card, fontWeight: '600' }]}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Filter Assignment Modal - PRODUCTION GRADE */}
+      <Modal
+        visible={showFilterModal}
+        transparent
+        animationType="none"
+        onRequestClose={() => closeWithAnimation(setShowFilterModal)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => closeWithAnimation(setShowFilterModal)}>
+          <Pressable style={[styles.modernDialog, { backgroundColor: colors.card }]}>
+            <View style={styles.modernDialogHeader}>
+              <View style={[styles.modernDialogIcon, { backgroundColor: colors.tint }]}>
+                <Feather name="tag" size={20} color={colors.text} />
+              </View>
+              <Text style={[styles.modernDialogTitle, { color: colors.text }]}>Assign to Filters</Text>
+              <Text style={[styles.modernDialogSubtitle, { color: colors.textSecondary }]}>
+                Select which filters this card belongs to
+              </Text>
+            </View>
+
+            <ScrollView style={styles.filterAssignList}>
+              {filters.filter(f => !f.isDefault).map(filter => {
+                const isAssigned = selectedCard?.filterIds?.includes(filter.id);
+                return (
+                  <TouchableOpacity
+                    key={filter.id}
+                    style={[
+                      styles.filterAssignItem,
+                      { backgroundColor: isAssigned ? colors.tint : 'transparent' }
+                    ]}
+                    onPress={() => assignCardToFilter(filter.id)}
+                  >
+                    <View style={styles.filterAssignLeft}>
+                      <View style={[styles.filterAssignIconBox, { backgroundColor: colors.tint }]}>
+                        <Feather name={filter.icon} size={16} color={colors.text} />
+                      </View>
+                      <Text style={[styles.filterAssignText, { color: colors.text }]}>
+                        {filter.name}
+                      </Text>
+                    </View>
+                    <View style={[
+                      styles.modernCheckbox,
+                      {
+                        backgroundColor: isAssigned ? colors.primary : 'transparent',
+                        borderColor: isAssigned ? colors.primary : colors.border
+                      }
+                    ]}>
+                      {isAssigned && <Feather name="check" size={14} color={colors.card} strokeWidth={3} />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.modernButton, styles.modernButtonPrimary, { backgroundColor: colors.primary, marginTop: 16 }]}
+              onPress={() => {
+                closeWithAnimation(setShowFilterModal);
+                closeWithAnimation(setShowCardMenu);
+              }}
+            >
+              <Text style={[styles.modernButtonText, { color: colors.card, fontWeight: '600' }]}>Done</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* New Filter Modal - PRODUCTION GRADE WITH FIXED LAYOUT */}
+      <Modal
+        visible={showNewFilterModal}
+        transparent
+        animationType="none"
+        onRequestClose={() => closeWithAnimation(setShowNewFilterModal)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <Pressable style={styles.modalOverlay} onPress={() => closeWithAnimation(setShowNewFilterModal)}>
+            <Pressable style={[styles.modernDialog, styles.createFilterDialog, { backgroundColor: colors.card }]}>
+              <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+                <View style={styles.modernDialogHeader}>
+                  <View style={[styles.modernDialogIcon, { backgroundColor: colors.tint }]}>
+                    <Feather name="plus-circle" size={20} color={colors.text} />
+                  </View>
+                  <Text style={[styles.modernDialogTitle, { color: colors.text }]}>Create Filter</Text>
+                  <Text style={[styles.modernDialogSubtitle, { color: colors.textSecondary }]}>
+                    Choose an icon and name for your new filter
+                  </Text>
+                </View>
+
+                <View style={styles.modernDialogContent}>
+                  {/* Icon Selector and Input Row */}
+                  <View style={styles.filterCreateRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.selectedIconBox,
+                        { backgroundColor: colors.tint, borderColor: colors.border }
+                      ]}
+                    >
+                      <Feather name={newFilterIcon} size={24} color={colors.text} />
+                    </TouchableOpacity>
+
+                    <TextInput
+                      style={[
+                        styles.modernInput,
+                        styles.filterNameField,
+                        {
+                          backgroundColor: colors.inputBackground,
+                          color: colors.text,
+                          borderColor: isDuplicateFilterName(newFilterName) && newFilterName.trim() ? '#ef4444' : colors.border
+                        }
+                      ]}
+                      value={newFilterName}
+                      onChangeText={setNewFilterName}
+                      placeholder="Filter name"
+                      placeholderTextColor={colors.textSecondary}
+                      autoFocus
+                    />
+                  </View>
+
+                  {/* Duplicate Warning */}
+                  {isDuplicateFilterName(newFilterName) && newFilterName.trim() && (
+                    <View style={styles.validationWarning}>
+                      <Feather name="alert-circle" size={14} color="#ef4444" />
+                      <Text style={styles.validationText}>A filter with this name already exists</Text>
+                    </View>
+                  )}
+
+                  {/* Icon Grid - Fixed Layout */}
+                  <View style={styles.iconGridSection}>
+                    <Text style={[styles.iconGridLabel, { color: colors.textSecondary }]}>
+                      Select Icon
+                    </Text>
+                    <View style={styles.iconGridContainer}>
+                      {AVAILABLE_ICONS.map(icon => (
+                        <TouchableOpacity
+                          key={icon}
+                          style={[
+                            styles.iconGridItem,
+                            {
+                              backgroundColor: newFilterIcon === icon ? colors.primary : colors.tint,
+                              borderColor: newFilterIcon === icon ? colors.primary : colors.border
+                            }
+                          ]}
+                          onPress={() => setNewFilterIcon(icon)}
+                        >
+                          <Feather
+                            name={icon}
+                            size={20}
+                            color={newFilterIcon === icon ? colors.card : colors.text}
+                          />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.modernDialogActions}>
+                  <TouchableOpacity
+                    style={[styles.modernButton, styles.modernButtonSecondary, { backgroundColor: colors.tint }]}
+                    onPress={() => {
+                      closeWithAnimation(setShowNewFilterModal);
+                      setNewFilterName('');
+                      setNewFilterIcon('bookmark');
+                    }}
+                  >
+                    <Text style={[styles.modernButtonText, { color: colors.text }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.modernButton,
+                      styles.modernButtonPrimary,
+                      {
+                        backgroundColor: (!newFilterName.trim() || isDuplicateFilterName(newFilterName))
+                          ? colors.textSecondary
+                          : colors.primary,
+                        opacity: (!newFilterName.trim() || isDuplicateFilterName(newFilterName)) ? 0.5 : 1
+                      }
+                    ]}
+                    onPress={createNewFilter}
+                    disabled={!newFilterName.trim() || isDuplicateFilterName(newFilterName)}
+                  >
+                    <Text style={[styles.modernButtonText, { color: colors.card, fontWeight: '600' }]}>Create</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Account Menu Modal - PRODUCTION GRADE */}
+      <Modal
+        visible={showAccountMenu}
+        transparent
+        animationType="none"
+        onRequestClose={() => closeWithAnimation(setShowAccountMenu)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => closeWithAnimation(setShowAccountMenu)}>
+          <Animated.View
+            style={[
+              styles.accountMenu,
+              {
+                backgroundColor: colors.card,
+                opacity: fadeAnim,
+                transform: [{
+                  translateY: fadeAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-20, 0]
+                  })
+                }]
+              }
+            ]}
+          >
+            <View style={styles.accountMenuHeader}>
+              <View style={styles.avatarLarge}>
+                <Text style={{ color: '#fff', fontSize: 20, fontWeight: '600' }}>O</Text>
+              </View>
+              <Text style={[styles.accountName, { color: colors.text }]}>User</Text>
+              <Text style={[styles.accountEmail, { color: colors.textSecondary }]}>user@example.com</Text>
+            </View>
+
+            <View style={[styles.accountMenuDivider, { backgroundColor: colors.border }]} />
+
+            <View style={styles.accountMenuSection}>
+              <TouchableOpacity style={styles.accountMenuItem}>
+                <View style={[styles.accountMenuIconBox, { backgroundColor: colors.tint }]}>
+                  <Feather name="user" size={16} color={colors.text} />
+                </View>
+                <Text style={[styles.accountMenuText, { color: colors.text }]}>Profile</Text>
+                <Feather name="chevron-right" size={16} color={colors.textSecondary} style={{ marginLeft: 'auto' }} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.accountMenuItem}>
+                <View style={[styles.accountMenuIconBox, { backgroundColor: colors.tint }]}>
+                  <Feather name="settings" size={16} color={colors.text} />
+                </View>
+                <Text style={[styles.accountMenuText, { color: colors.text }]}>Settings</Text>
+                <Feather name="chevron-right" size={16} color={colors.textSecondary} style={{ marginLeft: 'auto' }} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.accountMenuItem}>
+                <View style={[styles.accountMenuIconBox, { backgroundColor: colors.tint }]}>
+                  <Feather name="help-circle" size={16} color={colors.text} />
+                </View>
+                <Text style={[styles.accountMenuText, { color: colors.text }]}>Help & Support</Text>
+                <Feather name="chevron-right" size={16} color={colors.textSecondary} style={{ marginLeft: 'auto' }} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.accountMenuDivider, { backgroundColor: colors.border }]} />
+
+            <View style={styles.accountMenuSection}>
+              <TouchableOpacity style={styles.accountMenuItem}>
+                <View style={[styles.accountMenuIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.1)' }]}>
+                  <Feather name="log-out" size={16} color="#ef4444" />
+                </View>
+                <Text style={[styles.accountMenuText, { color: '#ef4444' }]}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </Pressable>
+      </Modal>
+
+    </SafeAreaView >
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
   },
-  contentContainer: {
-    flex: 1,
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.m,
+    paddingTop: Platform.OS === 'ios' ? 12 : 48,
+    paddingBottom: 20,
   },
-  brandBar: {
-    backgroundColor: "#FFFFFF",
-    paddingTop: 10,
-    paddingBottom: 2,
-    paddingHorizontal: 16,
+  brandMark: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  fixedControls: {
-    backgroundColor: "#FFFFFF",
-    paddingTop: 6,
-    paddingBottom: 8,
-  },
-  button: {
-    height: 36,
-    width: 36,
-    backgroundColor: "#212121",
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  buttonRow: {
-    flexDirection: "row",
-    backgroundColor: "#F2F3F5",
-    borderColor: "#E7E8EB",
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginRight: 8,
-    alignItems: "center",
-  },
-  buttonRowActive: {
-    backgroundColor: "#111111",
-    borderColor: "#111111",
-  },
-  addChip: {
-    height: 34,
-    width: 34,
-    borderRadius: 17,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E7E8EB",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerColumn: {
-    paddingHorizontal: 16,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 100,
-    paddingTop: 6,
-  },
-  column3: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#EAEAEA",
+  logoPulse: {
+    width: 44,
+    height: 44,
     borderRadius: 14,
-    borderWidth: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 12,
-    shadowColor: "#D9D9D9",
-    shadowOpacity: 0.3,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowRadius: 10,
-    elevation: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  image: {
+  headerLogo: {
     width: 40,
     height: 40,
-    marginRight: 8,
   },
-  image2: {
-    width: 16,
-    height: 16,
-    marginLeft: 16,
-    marginRight: 8,
-    tintColor: "#666",
+  logoText: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
-  image3: {
-    width: 14,
-    height: 14,
-    marginRight: 6,
-  },
-  image4: {
-    width: 32,
-    height: 32,
-  },
-  image5: {
-    borderRadius: 10,
-    width: 24,
-    height: 24,
-  },
-  image6: {
-    width: 12,
-    height: 12,
-    marginRight: 4,
-    tintColor: "#868686",
-  },
-  image7: {
-    width: 14,
-    height: 14,
-    tintColor: "#555",
-  },
-  image8: {
-    width: 46,
-    height: 32,
-    resizeMode: "contain",
-  },
-  input: {
-    color: "#000000",
-    fontSize: 14,
-    marginRight: 4,
-    flex: 1,
-    paddingVertical: 10,
-  },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderRadius: 15,
-    marginBottom: 6,
-  },
-  row2: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  row3: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F3F4F6",
-    borderRadius: 16,
-    marginBottom: 10,
-    height: 44,
-    paddingHorizontal: 12,
-  },
-  row4: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingRight: 16,
-  },
-  filtersScroll: {
-    flexGrow: 0,
-  },
-  filtersContent: {
-    paddingRight: 10,
-  },
-  row5: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  cardKebabButton: {
-    paddingLeft: 10,
-    paddingVertical: 2,
-  },
-  row6: {
-    flexDirection: "row",
-    marginBottom: 12,
-    alignItems: "center",
-  },
-  row7: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginRight: 16,
-    gap: 6,
-  },
-  row8: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-  },
-  row9: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  row10: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  text: {
-    color: "#000000",
-    fontSize: 20,
-    fontWeight: "800",
-    fontFamily: "System",
-  },
-  subtitle: {
-    marginTop: -2,
-    color: "#6B6B70",
+  logoSubtext: {
     fontSize: 11,
-    fontWeight: "500",
+    fontWeight: '600',
+    opacity: 0.6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  text2: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "bold",
+  accountPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 6,
+    paddingRight: 10,
+    borderRadius: 20,
+    borderWidth: 1,
   },
-  text3: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
+  avatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    backgroundColor: '#18181B',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  text4: {
-    color: "#2C2C2E",
-    fontSize: 13,
-    fontWeight: "700",
+  avatarText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
-  text5: {
-    color: "#000000",
+  searchContainer: {
+    paddingHorizontal: SPACING.m,
+    marginBottom: SPACING.m + 2,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.m,
+    height: 48,
+    borderRadius: 12,
+    gap: 10,
+    borderColor: '#e5e7ebff',
+    borderWidth: 1,
+    strokeWidth: 1,
+    shadowColor: "#e5e7ebff",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    marginBottom: SPACING.m - 22,
+  },
+  searchInput: {
+    flex: 1,
     fontSize: 16,
-    fontWeight: "600",
+  },
+  filterContainer: {
+    marginBottom: SPACING.m - 6,
+    height: 39,
+  },
+  filterScroll: {
+    paddingHorizontal: SPACING.m,
+    gap: 8,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    height: 36,
+    borderRadius: 12,
+    gap: 6,
+    borderColor: '#e5e7ebff',
+    borderWidth: 1,
+    strokeWidth: 1,
+    shadowColor: "#e5e7ebff",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    marginBottom: SPACING.m - 22,
+  },
+  filterText: {
+    fontWeight: '500',
+    fontSize: 14,
+  },
+  listContent: {
+    paddingHorizontal: SPACING.m,
+    paddingBottom: 80,
+  },
+  card: {
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    // Modern subtle shadow
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
     flex: 1,
     marginRight: 8,
+    letterSpacing: -0.2,
   },
-  text6: {
-    color: "#868686",
-    fontSize: 12,
-    fontWeight: "500",
+  cardMeta: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
   },
-  view: {
-    justifyContent: "center",
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  searchIcon: {
-    marginRight: 8,
+  metaText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
-  view2: {
-    backgroundColor: "#F8F8F8",
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  actionIcons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  actionIcon: {
+    padding: 6,
     borderRadius: 8,
-    padding: 8,
-    marginRight: 8,
+    backgroundColor: 'rgba(0,0,0,0.03)',
   },
-  view3: {
-    backgroundColor: "#F8F8F8",
-    borderRadius: 8,
-    padding: 8,
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 64,
   },
-  cardContentArea: {
-    flex: 1,
-  },
-  fabWrapper: {
-    position: "absolute",
-    bottom: 30,
-    right: 30,
-    alignItems: "center",
+  emptyText: {
+    marginTop: 16,
+    fontSize: 16,
   },
   fab: {
+    position: 'absolute',
+    bottom: 30,
+    right: 24,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 10,
+  },
+  fabButton: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fabMenu: {
+    position: 'absolute',
+    bottom: 120,
+    right: 24,
+    alignItems: 'flex-end',
+    gap: 12,
+    zIndex: 10,
+    width: 100,
+    height: 100,
+  },
+  fabMenuItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Production-grade context menu
+  contextMenu: {
+    width: 280, // Fixed, compact width
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  contextMenuHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.04)',
+    alignItems: 'center',
+  },
+  contextMenuTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    opacity: 0.6,
+  },
+  contextMenuSection: {
+    padding: 6,
+  },
+  contextMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    gap: 12,
+    borderRadius: 10,
+    marginVertical: 1,
+  },
+  contextMenuIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contextMenuTextContainer: {
+    flex: 1,
+    gap: 2,
+  },
+  contextMenuItemText: {
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: -0.1,
+  },
+  contextMenuItemDesc: {
+    fontSize: 11,
+    opacity: 0.5,
+    lineHeight: 14,
+  },
+  contextMenuDivider: {
+    height: 1,
+    marginVertical: 4,
+    marginHorizontal: 12,
+  },
+  // Production-grade modern dialogs
+  modernDialog: {
+    width: 320, // Compact fixed width
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  createFilterDialog: {
+    width: 340,
+    maxHeight: '80%',
+  },
+  modernDialogHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modernDialogIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  modernDialogTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 6,
+    letterSpacing: -0.3,
+    textAlign: 'center',
+  },
+  modernDialogSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    paddingHorizontal: 12,
+    opacity: 0.7,
+  },
+  modernDialogContent: {
+    marginBottom: 20,
+  },
+  modernInput: {
+    borderRadius: 14,
+    padding: 12, // More compact
+    fontSize: 15,
+    borderWidth: 1.5,
+  },
+  filterCreateRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  selectedIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+  },
+  filterNameField: {
+    flex: 1,
+  },
+  validationWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  validationText: {
+    fontSize: 13,
+    color: '#ef4444',
+    fontWeight: '500',
+  },
+  iconGridSection: {
+    marginTop: 8,
+  },
+  iconGridLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 14,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  iconGridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'flex-start',
+  },
+  iconGridItem: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+  },
+  modernDialogActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  modernButton: {
+    flex: 1,
+    paddingVertical: 12, // Compact
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modernButtonPrimary: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  modernButtonSecondary: {},
+  modernButtonText: {
+    fontSize: 16,
+  },
+  filterAssignList: {
+    maxHeight: 280,
+    marginBottom: 8,
+  },
+  filterAssignItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  filterAssignLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  filterAssignIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterAssignText: {
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: -0.2,
+  },
+  modernCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  statusBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  progressBarContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 8,
+    right: 8,
+    height: 3,
+    backgroundColor: '#E4E4E7',
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
+    overflow: 'hidden',
+    borderRadius: 40,
+  },
+  progressBar: {
+    height: '100%',
+  },
+  // Production-grade account menu
+  accountMenu: {
+    position: 'absolute',
+    top: 64,
+    right: 16,
+    width: 260, // Compact
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  accountMenuHeader: {
+    alignItems: 'center',
+    padding: 16,
+    paddingBottom: 16,
+  },
+  avatarLarge: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#1C1C1E",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: '#18181B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
     shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  fabMenuContainer: {
-    position: "absolute",
-    bottom: -40,
-    right: -30,
-    alignItems: "flex-end",
-    gap: 10,
-  },
-  fabMenuItem: {
-    backgroundColor: "#212121",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 5,
-  },
-  fabMenuText: { color: "#FFF", fontWeight: "600" },
-  contextMenuRoot: {
-    flex: 1,
-  },
-  contextMenuBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.12)",
-  },
-  contextMenuPressable: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  contextMenu: {
-    position: "absolute",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    minWidth: 150,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
-    overflow: "hidden",
-  },
-  contextMenuItem: {
-    paddingVertical: 13,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F2F2F2",
-  },
-  contextMenuItemText: {
-    color: "#1C1C1E",
-    fontWeight: "500",
-    fontSize: 15,
-    letterSpacing: 0.3,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  modalContent: { width: "100%" },
-  modalCard: {
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  modalTitle: {
+  accountName: {
     fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 12,
-    color: "#000",
+    fontWeight: '700',
+    marginBottom: 2,
+    letterSpacing: -0.2,
   },
-  modalInput: {
-    borderColor: "#E0E0E0",
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: "#000",
-    marginBottom: 12,
+  accountEmail: {
+    fontSize: 13,
+    opacity: 0.6,
   },
-  modalActions: { flexDirection: "row", justifyContent: "flex-end" },
-  modalButton: { paddingVertical: 10, paddingHorizontal: 9 },
-  modalButtonText: {
-    color: "#1C1C1E",
-    fontWeight: "600",
+  accountMenuSection: {
+    padding: 6,
+  },
+  accountMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    gap: 12,
+    borderRadius: 8,
+    marginVertical: 1,
+  },
+  accountMenuIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accountMenuText: {
     fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: -0.1,
   },
-  favoriteTint: { tintColor: "#e67e22" },
+  accountMenuDivider: {
+    height: 1,
+    marginVertical: 4,
+    marginHorizontal: 12,
+  },
 });

@@ -1,6 +1,34 @@
-// Load environment variables
-const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+// Load environment variables directly from .env.local
+const fs = require('fs');
+const path = require('path');
+
+const envPath = path.join(__dirname, '.env.local');
+let DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
+let OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+
+// If not available from process.env, read directly from .env.local
+if (!DEEPGRAM_API_KEY || !OPENROUTER_API_KEY) {
+  try {
+    const envContent = fs.readFileSync(envPath, 'utf-8');
+    const lines = envContent.split('\n');
+
+    lines.forEach(line => {
+      line = line.trim();
+      if (line && !line.startsWith('#')) {
+        const [key, ...valueParts] = line.split('=');
+        const value = valueParts.join('=').trim();
+
+        if (key.trim() === 'DEEPGRAM_API_KEY') {
+          DEEPGRAM_API_KEY = value.replace(/^["'](.+)["']$/, '$1');
+        } else if (key.trim() === 'OPENROUTER_API_KEY') {
+          OPENROUTER_API_KEY = value.replace(/^["'](.+)["']$/, '$1');
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error reading .env.local:', error);
+  }
+}
 
 // Debug logging
 console.log('Loading app.config.js...');
