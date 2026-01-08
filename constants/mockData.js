@@ -1,3 +1,8 @@
+/**
+ * Mock data for development and testing.
+ * The lecture schema includes whiteboard fields (v2).
+ */
+
 export const MOCK_DATA = [
   {
     id: '1',
@@ -6,7 +11,19 @@ export const MOCK_DATA = [
     duration: "15min",
     category: "Physics",
     isFavorite: false,
-    image: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/qftcx6me_expires_30_days.png"
+    image: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/qftcx6me_expires_30_days.png",
+    // Audio/Transcript fields
+    audioUri: null,
+    transcribedText: '',
+    transcriptSegments: [],
+    summary: '',
+    flashcards: [],
+    // Whiteboard fields (v2)
+    whiteboardSnapshot: null,
+    conceptGraph: null,
+    whiteboardSyncStatus: 'synced',
+    lastWhiteboardSync: null,
+    schemaVersion: 2,
   },
   {
     id: '2',
@@ -15,7 +32,17 @@ export const MOCK_DATA = [
     duration: "45min",
     category: "Physics",
     isFavorite: true,
-    image: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/dogh1pny_expires_30_days.png"
+    image: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/dogh1pny_expires_30_days.png",
+    audioUri: null,
+    transcribedText: '',
+    transcriptSegments: [],
+    summary: '',
+    flashcards: [],
+    whiteboardSnapshot: null,
+    conceptGraph: null,
+    whiteboardSyncStatus: 'synced',
+    lastWhiteboardSync: null,
+    schemaVersion: 2,
   },
   {
     id: '3',
@@ -24,7 +51,17 @@ export const MOCK_DATA = [
     duration: "30min",
     category: "Chemistry",
     isFavorite: false,
-    image: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/4h3iuzvx_expires_30_days.png"
+    image: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/4h3iuzvx_expires_30_days.png",
+    audioUri: null,
+    transcribedText: '',
+    transcriptSegments: [],
+    summary: '',
+    flashcards: [],
+    whiteboardSnapshot: null,
+    conceptGraph: null,
+    whiteboardSyncStatus: 'synced',
+    lastWhiteboardSync: null,
+    schemaVersion: 2,
   },
   {
     id: '4',
@@ -33,7 +70,17 @@ export const MOCK_DATA = [
     duration: "60min",
     category: "Math",
     isFavorite: true,
-    image: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/88t1ga5l_expires_30_days.png"
+    image: "https://storage.googleapis.com/tagjs-prod.appspot.com/v1/JWx5b4z3d8/88t1ga5l_expires_30_days.png",
+    audioUri: null,
+    transcribedText: '',
+    transcriptSegments: [],
+    summary: '',
+    flashcards: [],
+    whiteboardSnapshot: null,
+    conceptGraph: null,
+    whiteboardSyncStatus: 'synced',
+    lastWhiteboardSync: null,
+    schemaVersion: 2,
   },
 ];
 

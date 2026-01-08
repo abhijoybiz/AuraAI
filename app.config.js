@@ -1,59 +1,42 @@
-// Load environment variables directly from .env.local
-const fs = require('fs');
-const path = require('path');
+// app.config.js
+// Expo-compatible configuration file
+// Environment variables are injected at build time via process.env
 
-const envPath = path.join(__dirname, '.env.local');
-let DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
-let OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
 
-// If not available from process.env, read directly from .env.local
-if (!DEEPGRAM_API_KEY || !OPENROUTER_API_KEY) {
-  try {
-    const envContent = fs.readFileSync(envPath, 'utf-8');
-    const lines = envContent.split('\n');
-
-    lines.forEach(line => {
-      line = line.trim();
-      if (line && !line.startsWith('#')) {
-        const [key, ...valueParts] = line.split('=');
-        const value = valueParts.join('=').trim();
-
-        if (key.trim() === 'DEEPGRAM_API_KEY') {
-          DEEPGRAM_API_KEY = value.replace(/^["'](.+)["']$/, '$1');
-        } else if (key.trim() === 'OPENROUTER_API_KEY') {
-          OPENROUTER_API_KEY = value.replace(/^["'](.+)["']$/, '$1');
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Error reading .env.local:', error);
-  }
-}
-
-// Debug logging
+// Optional debug logs (safe to remove later)
 console.log('Loading app.config.js...');
 console.log('DEEPGRAM_API_KEY:', DEEPGRAM_API_KEY ? '✓ Loaded' : '✗ Missing');
 console.log('OPENROUTER_API_KEY:', OPENROUTER_API_KEY ? '✓ Loaded' : '✗ Missing');
+console.log('API_BASE_URL:', API_BASE_URL);
 
 module.exports = {
   expo: {
-    name: "Expo App",
-    slug: "expo-app",
+    name: "Memry",
+    slug: "memry",
     version: "1.0.0",
     orientation: "portrait",
+
     icon: "./assets/logo.png",
+
     userInterfaceStyle: "light",
+
     splash: {
       image: "./assets/logo.png",
       resizeMode: "contain",
       backgroundColor: "#ffffff"
     },
+
     assetBundlePatterns: [
       "**/*"
     ],
+
     ios: {
       supportsTablet: true
     },
+
     android: {
       adaptiveIcon: {
         foregroundImage: "./assets/logo.png",
@@ -61,12 +44,15 @@ module.exports = {
       },
       package: "com.anonymous.expoapp"
     },
+
     web: {
       favicon: "./assets/logo.png"
     },
+
     extra: {
       deepgramApiKey: DEEPGRAM_API_KEY,
-      openrouterApiKey: OPENROUTER_API_KEY
+      openrouterApiKey: OPENROUTER_API_KEY,
+      apiBaseUrl: API_BASE_URL
     }
   }
 };
