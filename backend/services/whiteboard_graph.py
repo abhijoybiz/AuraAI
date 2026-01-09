@@ -74,7 +74,7 @@ class WhiteboardGraphService:
         """
         Extract concepts and relationships from text using LLM.
         
-        Uses OpenRouter API to analyze the text and identify:
+        Uses Groq API to analyze the text and identify:
         - A central/main topic (first node)
         - Key concepts branching from it
         - Relationships between concepts
@@ -114,13 +114,13 @@ JSON:"""
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{self.settings.openrouter_base_url}/chat/completions",
+                    f"{self.settings.groq_base_url}/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {self.settings.openrouter_api_key}",
+                        "Authorization": f"Bearer {self.settings.groq_api_key}",
                         "Content-Type": "application/json",
                     },
                     json={
-                        "model": self.settings.openrouter_model,
+                        "model": self.settings.groq_model,
                         "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0.3,
                     },

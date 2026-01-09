@@ -23,7 +23,7 @@ import { getLecture } from '../utils/storage';
  */
 export default function LectureDetailScreen({ route, navigation }) {
   const { lectureId } = route?.params || {};
-  
+
   const [lecture, setLecture] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('transcript');
@@ -134,8 +134,90 @@ export default function LectureDetailScreen({ route, navigation }) {
 
     return (
       <ScrollView style={styles.scrollContent}>
-        <Text style={styles.summaryText}>{summary}</Text>
+        <MarkdownRenderer content={summary} />
       </ScrollView>
+    );
+  };
+
+  const MarkdownRenderer = ({ content }) => {
+    if (!content) return null;
+
+    const lines = content.split('\n');
+    return (
+      <View style={{ paddingBottom: 40 }}>
+        {lines.map((line, index) => {
+          const trimmedLine = line.trim();
+
+          if (trimmedLine === '---') {
+            return <View key={index} style={styles.mdHr} />;
+          }
+
+          if (trimmedLine.startsWith('> ')) {
+            return (
+              <View key={index} style={styles.mdQuote}>
+                <Text style={styles.mdText}>
+                  {trimmedLine.replace('> ', '')}
+                </Text>
+              </View>
+            );
+          }
+
+          if (trimmedLine.startsWith('### ')) {
+            return <Text key={index} style={styles.mdH3}>{trimmedLine.replace('### ', '')}</Text>;
+          }
+          if (trimmedLine.startsWith('## ')) {
+            return <Text key={index} style={styles.mdH2}>{trimmedLine.replace('## ', '')}</Text>;
+          }
+          if (trimmedLine.startsWith('# ')) {
+            return <Text key={index} style={styles.mdH1}>{trimmedLine.replace('# ', '')}</Text>;
+          }
+
+          const numberedMatch = trimmedLine.match(/^(\d+)\.\s+(.*)/);
+          if (numberedMatch) {
+            return (
+              <View key={index} style={styles.mdNumberedRow}>
+                <Text style={styles.mdNumberedLabel}>{numberedMatch[1]}.</Text>
+                <Text style={[styles.mdText, { flex: 1 }]}>
+                  {numberedMatch[2]}
+                </Text>
+              </View>
+            );
+          }
+
+          if (trimmedLine.startsWith('- ') || trimmedLine.startsWith('* ')) {
+            return (
+              <View key={index} style={styles.mdBulletRow}>
+                <Text style={styles.mdBullet}>•</Text>
+                <Text style={[styles.mdText, { flex: 1 }]}>
+                  {trimmedLine.substring(2)}
+                </Text>
+              </View>
+            );
+          }
+
+          const parts = trimmedLine.split(/(\*\*.*?\*\*|\*.*?\*|`.*?`)/g);
+          return (
+            <Text key={index} style={styles.mdText}>
+              {parts.map((part, pIdx) => {
+                if (part.startsWith('**') && part.endsWith('**')) {
+                  return <Text key={pIdx} style={{ fontWeight: '700', color: '#000' }}>{part.slice(2, -2)}</Text>;
+                }
+                if (part.startsWith('*') && part.endsWith('*')) {
+                  return <Text key={pIdx} style={{ fontStyle: 'italic' }}>{part.slice(1, -1)}</Text>;
+                }
+                if (part.startsWith('`') && part.endsWith('`')) {
+                  return (
+                    <View key={pIdx} style={styles.mdCodeInline}>
+                      <Text style={styles.mdCodeText}>{part.slice(1, -1)}</Text>
+                    </View>
+                  );
+                }
+                return part;
+              })}
+            </Text>
+          );
+        })}
+      </View>
     );
   };
 
@@ -389,6 +471,19 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: '#333',
   },
+  // Markdown Styles
+  mdH1: { fontSize: 26, fontWeight: '800', color: '#000', marginVertical: 12 },
+  mdH2: { fontSize: 22, fontWeight: '700', color: '#000', marginVertical: 10, marginTop: 20 },
+  mdH3: { fontSize: 18, fontWeight: '700', color: '#000', marginVertical: 8, marginTop: 15 },
+  mdText: { fontSize: 15, lineHeight: 24, color: '#444', marginVertical: 4 },
+  mdBulletRow: { flexDirection: 'row', marginLeft: 10, marginVertical: 2 },
+  mdBullet: { fontSize: 18, marginRight: 8, lineHeight: 24, color: '#000' },
+  mdHr: { height: 1.5, backgroundColor: '#E0E0E0', marginVertical: 16, borderRadius: 1 },
+  mdQuote: { borderLeftWidth: 4, borderLeftColor: '#2196F3', paddingLeft: 16, marginVertical: 8, fontStyle: 'italic' },
+  mdNumberedRow: { flexDirection: 'row', marginLeft: 10, marginVertical: 4 },
+  mdNumberedLabel: { fontWeight: '700', marginRight: 8, fontSize: 15, width: 20, color: '#000' },
+  mdCodeInline: { backgroundColor: '#F5F5F5', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4, marginHorizontal: 2 },
+  mdCodeText: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 13, color: '#E91E63' },
   // Flashcard styles
   flashcardContainer: {
     flex: 1,

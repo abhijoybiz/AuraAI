@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const LECTURES_KEY = 'aura_ai_lectures';
-const FILTERS_KEY = 'aura_ai_filters';
+const LECTURES_KEY = 'memry_ai_lectures';
+const FILTERS_KEY = 'memry_ai_filters';
 
 export const storage = {
     async getLectures() {

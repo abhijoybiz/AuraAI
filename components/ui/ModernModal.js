@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import {
+    View,
     Modal,
     StyleSheet,
     Pressable,
@@ -61,19 +62,20 @@ export const ModernModal = ({
 
     return (
         <Modal transparent visible={visible} onRequestClose={onClose} animationType="none">
+            <Animated.View
+                style={[
+                    styles.backdrop,
+                    { backgroundColor: isDark ? "rgba(0,0,0,0.8)" : "rgba(0,0,0,0.4)", opacity: fadeAnim },
+                ]}
+            >
+                <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+            </Animated.View>
+
             <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 style={styles.centered}
+                pointerEvents="box-none"
             >
-                <Animated.View
-                    style={[
-                        styles.backdrop,
-                        { backgroundColor: isDark ? "rgba(0,0,0,0.7)" : "rgba(0,0,0,0.3)", opacity: fadeAnim },
-                    ]}
-                >
-                    <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-                </Animated.View>
-
                 <Animated.View
                     style={[
                         styles.card,
@@ -88,17 +90,11 @@ export const ModernModal = ({
                     ]}
                 >
                     {title && (
-                        <Pressable style={styles.header}>
-                            {/* Make header decorative or functional if needed */}
+                        <View style={styles.header}>
                             <ThemedText type="subtitle" style={{ marginBottom: SPACING.s }}>{title}</ThemedText>
-                        </Pressable>
+                        </View>
                     )}
-                    {/* We import ThemedText inside to avoid circular deps or just use base Text if needed, 
-              but let's assume we pass children efficiently. */}
                     {children}
-
-                    {/* Close Button Absolute or part of layout? Let user handle actions usually. 
-              But let's add a subtle close corner if no actions. */}
                 </Animated.View>
             </KeyboardAvoidingView>
         </Modal>

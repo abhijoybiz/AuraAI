@@ -725,51 +725,50 @@ export default function HomeScreen({ navigation }) {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
-          <Pressable style={styles.modalOverlay} onPress={() => closeWithAnimation(setShowRenameModal)}>
-            <Pressable style={[styles.modernDialog, { backgroundColor: colors.card }]}>
-              <View style={styles.modernDialogHeader}>
-                <View style={[styles.modernDialogIcon, { backgroundColor: colors.tint }]}>
-                  <Feather name="edit-2" size={20} color={colors.text} />
-                </View>
-                <Text style={[styles.modernDialogTitle, { color: colors.text }]}>Rename Card</Text>
-                <Text style={[styles.modernDialogSubtitle, { color: colors.textSecondary }]}>
-                  Enter a new name for this card
-                </Text>
+          <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => closeWithAnimation(setShowRenameModal)} />
+          <Pressable style={[styles.modernDialog, { backgroundColor: colors.card }]} pointerEvents="auto">
+            <View style={styles.modernDialogHeader}>
+              <View style={[styles.modernDialogIcon, { backgroundColor: colors.tint }]}>
+                <Feather name="edit-2" size={20} color={colors.text} />
               </View>
+              <Text style={[styles.modernDialogTitle, { color: colors.text }]}>Rename Card</Text>
+              <Text style={[styles.modernDialogSubtitle, { color: colors.textSecondary }]}>
+                Enter a new name for this card
+              </Text>
+            </View>
 
-              <View style={styles.modernDialogContent}>
-                <TextInput
-                  style={[
-                    styles.modernInput,
-                    {
-                      backgroundColor: colors.inputBackground,
-                      color: colors.text,
-                      borderColor: colors.border
-                    }
-                  ]}
-                  value={renameText}
-                  onChangeText={setRenameText}
-                  placeholder="Enter new name"
-                  placeholderTextColor={colors.textSecondary}
-                  autoFocus
-                />
-              </View>
+            <View style={styles.modernDialogContent}>
+              <TextInput
+                style={[
+                  styles.modernInput,
+                  {
+                    backgroundColor: colors.inputBackground,
+                    color: colors.text,
+                    borderColor: colors.border
+                  }
+                ]}
+                value={renameText}
+                onChangeText={setRenameText}
+                placeholder="Enter new name"
+                placeholderTextColor={colors.textSecondary}
+                autoFocus
+              />
+            </View>
 
-              <View style={styles.modernDialogActions}>
-                <TouchableOpacity
-                  style={[styles.modernButton, styles.modernButtonSecondary, { backgroundColor: colors.tint }]}
-                  onPress={() => closeWithAnimation(setShowRenameModal)}
-                >
-                  <Text style={[styles.modernButtonText, { color: colors.text }]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modernButton, styles.modernButtonPrimary, { backgroundColor: colors.primary }]}
-                  onPress={renameCard}
-                >
-                  <Text style={[styles.modernButtonText, { color: colors.card, fontWeight: '600' }]}>Save</Text>
-                </TouchableOpacity>
-              </View>
-            </Pressable>
+            <View style={styles.modernDialogActions}>
+              <TouchableOpacity
+                style={[styles.modernButton, styles.modernButtonSecondary, { backgroundColor: colors.tint }]}
+                onPress={() => closeWithAnimation(setShowRenameModal)}
+              >
+                <Text style={[styles.modernButtonText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modernButton, styles.modernButtonPrimary, { backgroundColor: colors.primary }]}
+                onPress={renameCard}
+              >
+                <Text style={[styles.modernButtonText, { color: colors.card, fontWeight: '600' }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
@@ -782,7 +781,7 @@ export default function HomeScreen({ navigation }) {
         onRequestClose={() => closeWithAnimation(setShowFilterModal)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => closeWithAnimation(setShowFilterModal)}>
-          <Pressable style={[styles.modernDialog, { backgroundColor: colors.card }]}>
+          <Pressable style={[styles.modernDialog, { backgroundColor: colors.card }]} pointerEvents="auto">
             <View style={styles.modernDialogHeader}>
               <View style={[styles.modernDialogIcon, { backgroundColor: colors.tint }]}>
                 <Feather name="tag" size={20} color={colors.text} />
@@ -851,116 +850,115 @@ export default function HomeScreen({ navigation }) {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
-          <Pressable style={styles.modalOverlay} onPress={() => closeWithAnimation(setShowNewFilterModal)}>
-            <Pressable style={[styles.modernDialog, styles.createFilterDialog, { backgroundColor: colors.card }]}>
-              <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-                <View style={styles.modernDialogHeader}>
-                  <View style={[styles.modernDialogIcon, { backgroundColor: colors.tint }]}>
-                    <Feather name="plus-circle" size={20} color={colors.text} />
-                  </View>
-                  <Text style={[styles.modernDialogTitle, { color: colors.text }]}>Create Filter</Text>
-                  <Text style={[styles.modernDialogSubtitle, { color: colors.textSecondary }]}>
-                    Choose an icon and name for your new filter
-                  </Text>
+          <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.4)' }]} onPress={() => closeWithAnimation(setShowNewFilterModal)} />
+          <Pressable style={[styles.modernDialog, styles.createFilterDialog, { backgroundColor: colors.card }]} pointerEvents="auto">
+            <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+              <View style={styles.modernDialogHeader}>
+                <View style={[styles.modernDialogIcon, { backgroundColor: colors.tint }]}>
+                  <Feather name="plus-circle" size={20} color={colors.text} />
                 </View>
+                <Text style={[styles.modernDialogTitle, { color: colors.text }]}>Create Filter</Text>
+                <Text style={[styles.modernDialogSubtitle, { color: colors.textSecondary }]}>
+                  Choose an icon and name for your new filter
+                </Text>
+              </View>
 
-                <View style={styles.modernDialogContent}>
-                  {/* Icon Selector and Input Row */}
-                  <View style={styles.filterCreateRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.selectedIconBox,
-                        { backgroundColor: colors.tint, borderColor: colors.border }
-                      ]}
-                    >
-                      <Feather name={newFilterIcon} size={24} color={colors.text} />
-                    </TouchableOpacity>
-
-                    <TextInput
-                      style={[
-                        styles.modernInput,
-                        styles.filterNameField,
-                        {
-                          backgroundColor: colors.inputBackground,
-                          color: colors.text,
-                          borderColor: isDuplicateFilterName(newFilterName) && newFilterName.trim() ? '#ef4444' : colors.border
-                        }
-                      ]}
-                      value={newFilterName}
-                      onChangeText={setNewFilterName}
-                      placeholder="Filter name"
-                      placeholderTextColor={colors.textSecondary}
-                      autoFocus
-                    />
-                  </View>
-
-                  {/* Duplicate Warning */}
-                  {isDuplicateFilterName(newFilterName) && newFilterName.trim() && (
-                    <View style={styles.validationWarning}>
-                      <Feather name="alert-circle" size={14} color="#ef4444" />
-                      <Text style={styles.validationText}>A filter with this name already exists</Text>
-                    </View>
-                  )}
-
-                  {/* Icon Grid - Fixed Layout */}
-                  <View style={styles.iconGridSection}>
-                    <Text style={[styles.iconGridLabel, { color: colors.textSecondary }]}>
-                      Select Icon
-                    </Text>
-                    <View style={styles.iconGridContainer}>
-                      {AVAILABLE_ICONS.map(icon => (
-                        <TouchableOpacity
-                          key={icon}
-                          style={[
-                            styles.iconGridItem,
-                            {
-                              backgroundColor: newFilterIcon === icon ? colors.primary : colors.tint,
-                              borderColor: newFilterIcon === icon ? colors.primary : colors.border
-                            }
-                          ]}
-                          onPress={() => setNewFilterIcon(icon)}
-                        >
-                          <Feather
-                            name={icon}
-                            size={20}
-                            color={newFilterIcon === icon ? colors.card : colors.text}
-                          />
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.modernDialogActions}>
-                  <TouchableOpacity
-                    style={[styles.modernButton, styles.modernButtonSecondary, { backgroundColor: colors.tint }]}
-                    onPress={() => {
-                      closeWithAnimation(setShowNewFilterModal);
-                      setNewFilterName('');
-                      setNewFilterIcon('bookmark');
-                    }}
-                  >
-                    <Text style={[styles.modernButtonText, { color: colors.text }]}>Cancel</Text>
-                  </TouchableOpacity>
+              <View style={styles.modernDialogContent}>
+                {/* Icon Selector and Input Row */}
+                <View style={styles.filterCreateRow}>
                   <TouchableOpacity
                     style={[
-                      styles.modernButton,
-                      styles.modernButtonPrimary,
+                      styles.selectedIconBox,
+                      { backgroundColor: colors.tint, borderColor: colors.border }
+                    ]}
+                  >
+                    <Feather name={newFilterIcon} size={24} color={colors.text} />
+                  </TouchableOpacity>
+
+                  <TextInput
+                    style={[
+                      styles.modernInput,
+                      styles.filterNameField,
                       {
-                        backgroundColor: (!newFilterName.trim() || isDuplicateFilterName(newFilterName))
-                          ? colors.textSecondary
-                          : colors.primary,
-                        opacity: (!newFilterName.trim() || isDuplicateFilterName(newFilterName)) ? 0.5 : 1
+                        backgroundColor: colors.inputBackground,
+                        color: colors.text,
+                        borderColor: isDuplicateFilterName(newFilterName) && newFilterName.trim() ? '#ef4444' : colors.border
                       }
                     ]}
-                    onPress={createNewFilter}
-                    disabled={!newFilterName.trim() || isDuplicateFilterName(newFilterName)}
-                  >
-                    <Text style={[styles.modernButtonText, { color: colors.card, fontWeight: '600' }]}>Create</Text>
-                  </TouchableOpacity>
+                    value={newFilterName}
+                    onChangeText={setNewFilterName}
+                    placeholder="Filter name"
+                    placeholderTextColor={colors.textSecondary}
+                    autoFocus
+                  />
                 </View>
-              </ScrollView>
-            </Pressable>
+
+                {/* Duplicate Warning */}
+                {isDuplicateFilterName(newFilterName) && newFilterName.trim() && (
+                  <View style={styles.validationWarning}>
+                    <Feather name="alert-circle" size={14} color="#ef4444" />
+                    <Text style={styles.validationText}>A filter with this name already exists</Text>
+                  </View>
+                )}
+
+                {/* Icon Grid - Fixed Layout */}
+                <View style={styles.iconGridSection}>
+                  <Text style={[styles.iconGridLabel, { color: colors.textSecondary }]}>
+                    Select Icon
+                  </Text>
+                  <View style={styles.iconGridContainer}>
+                    {AVAILABLE_ICONS.map(icon => (
+                      <TouchableOpacity
+                        key={icon}
+                        style={[
+                          styles.iconGridItem,
+                          {
+                            backgroundColor: newFilterIcon === icon ? colors.primary : colors.tint,
+                            borderColor: newFilterIcon === icon ? colors.primary : colors.border
+                          }
+                        ]}
+                        onPress={() => setNewFilterIcon(icon)}
+                      >
+                        <Feather
+                          name={icon}
+                          size={20}
+                          color={newFilterIcon === icon ? colors.card : colors.text}
+                        />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.modernDialogActions}>
+                <TouchableOpacity
+                  style={[styles.modernButton, styles.modernButtonSecondary, { backgroundColor: colors.tint }]}
+                  onPress={() => {
+                    closeWithAnimation(setShowNewFilterModal);
+                    setNewFilterName('');
+                    setNewFilterIcon('bookmark');
+                  }}
+                >
+                  <Text style={[styles.modernButtonText, { color: colors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.modernButton,
+                    styles.modernButtonPrimary,
+                    {
+                      backgroundColor: (!newFilterName.trim() || isDuplicateFilterName(newFilterName))
+                        ? colors.textSecondary
+                        : colors.primary,
+                      opacity: (!newFilterName.trim() || isDuplicateFilterName(newFilterName)) ? 0.5 : 1
+                    }
+                  ]}
+                  onPress={createNewFilter}
+                  disabled={!newFilterName.trim() || isDuplicateFilterName(newFilterName)}
+                >
+                  <Text style={[styles.modernButtonText, { color: colors.card, fontWeight: '600' }]}>Create</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
@@ -1272,6 +1270,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
+    width: '100%',
   },
   // Production-grade context menu
   contextMenu: {

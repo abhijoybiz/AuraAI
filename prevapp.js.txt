@@ -1,10 +1,9 @@
-﻿import React from 'react';
+import React from 'react';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from "react";
-import { Platform } from 'react-native';
 import * as NavigationBar from "expo-navigation-bar";
 
 import HomeScreen from './screens/HomeScreen';
@@ -43,25 +42,12 @@ function Navigation() {
 
 export default function App() {
   useEffect(() => {
-    const hideNavigationBar = async () => {
-      if (Platform.OS === 'android') {
-        try {
-          await NavigationBar.setVisibilityAsync("hidden");
-          await NavigationBar.setBehaviorAsync("overlay-swipe");
-          await NavigationBar.setPositionAsync("absolute");
-          await NavigationBar.setBackgroundColorAsync("#00000000");
-        } catch (error) {
-          console.log('Navigation bar configuration error:', error);
-        }
-      }
-    };
-
-    hideNavigationBar();
+    NavigationBar.setVisibilityAsync("hidden");
+    NavigationBar.setBehaviorAsync("overlay-swipe");
   }, []);
-
   return (
     <ThemeProvider>
       <Navigation />
     </ThemeProvider>
   );
-}
+} 
