@@ -5,3 +5,7 @@ node_modules
 .idea
 .DS_Store
 .env.local
+venv
+__pycache__
+__pycache__/
+*.pyc
