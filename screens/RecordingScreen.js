@@ -21,7 +21,7 @@ const { width } = Dimensions.get('window');
 /**
  * Waveform Bar Component - Strictly following previous_app.js.txt pattern
  */
-const WaveBar = ({ level, isRecording }) => {
+const WaveBar = ({ level, isRecording, color }) => {
   const animatedHeight = useRef(new Animated.Value(5)).current;
 
   useEffect(() => {
@@ -40,7 +40,7 @@ const WaveBar = ({ level, isRecording }) => {
       style={{
         width: 4,
         height: animatedHeight,
-        backgroundColor: '#000000', // Solid black as requested
+        backgroundColor: color || '#000000',
         marginHorizontal: 3.5,
         borderRadius: 2,
         opacity: isRecording ? 1 : 0.2,
@@ -237,7 +237,7 @@ export default function RecordingScreen({ navigation }) {
         <View style={styles.waveformWrapper}>
           <View style={styles.waveformContainer}>
             {audioMetering.map((level, i) => (
-              <WaveBar key={i} level={level} isRecording={!!recording && !isPaused} />
+              <WaveBar key={i} level={level} isRecording={!!recording && !isPaused} color={colors.text} />
             ))}
           </View>
         </View>

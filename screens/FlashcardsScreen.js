@@ -11,12 +11,28 @@ import {
     ActivityIndicator,
     Platform
 } from 'react-native';
-import { ChevronLeft, Layers, Plus, Minus, RotateCcw, ChevronRight } from 'lucide-react-native';
+import { ChevronLeft, Layers, Plus, Minus, RotateCcw, ChevronRight, Sparkles } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { aiService } from '../services/ai.js';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
+
+const LoadingOverlay = ({ visible, message }) => {
+    const { colors, isDark } = useTheme();
+    if (!visible) return null;
+
+    return (
+        <View style={[StyleSheet.absoluteFill, styles.loadingOverlay, { backgroundColor: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+            <View style={[styles.loadingBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.loadingText, { color: colors.text }]}>{message || 'Generating...'}</Text>
+                <Text style={[styles.loadingSubtext, { color: colors.textSecondary }]}>This usually takes a few seconds</Text>
+            </View>
+        </View>
+    );
+};
 
 const Flashcard = ({ card, index, total }) => {
     const { colors } = useTheme();
@@ -55,7 +71,10 @@ const Flashcard = ({ card, index, total }) => {
         <View style={styles.cardContainer}>
             <TouchableOpacity activeOpacity={1} onPress={handleFlip} style={styles.cardWrapper}>
                 <Animated.View style={[styles.card, frontAnimatedStyle, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Text style={[styles.cardNumber, { color: colors.textSecondary }]}>Question {index + 1} / {total}</Text>
+                    <View style={styles.cardHeader}>
+                        <Sparkles size={16} color={colors.primary} style={{ marginRight: 6 }} />
+                        <Text style={[styles.cardNumber, { color: colors.textSecondary }]}>Question {index + 1} / {total}</Text>
+                    </View>
                     <Text style={[styles.cardTitle, { color: colors.text }]}>{card.question}</Text>
                     <Text style={[styles.tapHint, { color: colors.textSecondary }]}>Tap to see answer</Text>
                 </Animated.View>
@@ -94,32 +113,43 @@ export default function FlashcardsScreen({ route, navigation }) {
         }
     };
 
-    React.useEffect(() => {
-        const loadStored = async () => {
-            if (route.params?.id) {
-                const storedCards = await AsyncStorage.getItem('@memry_cards');
-                if (storedCards) {
-                    const cards = JSON.parse(storedCards);
-                    const card = cards.find(c => c.id === route.params.id);
-                    if (card?.flashcards) {
-                        setFlashcards(card.flashcards);
+    useFocusEffect(
+        React.useCallback(() => {
+            const loadStored = async () => {
+                if (route.params?.id) {
+                    const storedCards = await AsyncStorage.getItem('@memry_cards');
+                    if (storedCards) {
+                        const cards = JSON.parse(storedCards);
+                        const card = cards.find(c => c.id === route.params.id);
+                        if (card?.flashcards) {
+                            setFlashcards(card.flashcards);
+                        }
                     }
                 }
-            }
-        };
-        loadStored();
-    }, [route.params?.id]);
+            };
+            loadStored();
+        }, [route.params?.id])
+    );
 
     const handleGenerate = async () => {
-        if (!transcript) return;
+        if (!transcript || transcript.trim().length === 0) {
+            Alert.alert("Missing Content", "No transcript found for this lecture. Please wait for transcription to complete.");
+            return;
+        }
+
         setLoading(true);
         try {
             const data = await aiService.generateFlashcards(transcript, count);
-            setFlashcards(data);
-            setCurrentIndex(0);
-            await saveFlashcards(data);
+            if (data && data.length > 0) {
+                setFlashcards(data);
+                setCurrentIndex(0);
+                await saveFlashcards(data);
+            } else {
+                Alert.alert("Generation Failed", "AI could not generate flashcards from this content. Try a different transcript.");
+            }
         } catch (error) {
             console.error('Error generating flashcards:', error);
+            Alert.alert("Error", error.message || "Failed to generate flashcards. Please check your connection and try again.");
         } finally {
             setLoading(false);
         }
@@ -144,6 +174,7 @@ export default function FlashcardsScreen({ route, navigation }) {
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <LoadingOverlay visible={loading} message="Crafting Flashcards..." />
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.backButton, { backgroundColor: isDark ? colors.tint : '#FFFFFF', borderColor: colors.border }]}>
                     <ChevronLeft size={24} color={colors.text} />
@@ -211,7 +242,7 @@ export default function FlashcardsScreen({ route, navigation }) {
                             <ChevronLeft size={30} color={colors.text} />
                         </TouchableOpacity>
 
-                        <TouchableOpacity onPress={reset} style={styles.resetButton}>
+                        <TouchableOpacity onPress={reset} style={[styles.resetButton, { backgroundColor: colors.tint }]}>
                             <RotateCcw size={20} color={colors.textSecondary} />
                             <Text style={{ color: colors.textSecondary, marginLeft: 8, fontWeight: '600' }}>Reset</Text>
                         </TouchableOpacity>
@@ -244,7 +275,7 @@ const styles = StyleSheet.create({
     },
     headerTitle: {
         fontSize: 18,
-        fontWeight: '700',
+        fontFamily: 'Inter_600SemiBold',
     },
     backButton: {
         width: 44,
@@ -282,7 +313,7 @@ const styles = StyleSheet.create({
     },
     setupTitle: {
         fontSize: 24,
-        fontWeight: '800',
+        fontFamily: 'Inter_800ExtraBold',
         marginBottom: 12,
         textAlign: 'center',
     },
@@ -291,6 +322,7 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         lineHeight: 22,
         marginBottom: 40,
+        fontFamily: 'Inter_400Regular',
     },
     stepperContainer: {
         flexDirection: 'row',
@@ -371,7 +403,7 @@ const styles = StyleSheet.create({
     },
     cardTitle: {
         fontSize: 24,
-        fontWeight: '700',
+        fontFamily: 'Inter_700Bold',
         textAlign: 'center',
         lineHeight: 34,
     },
@@ -404,9 +436,46 @@ const styles = StyleSheet.create({
     resetButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(161, 161, 170, 0.1)',
         paddingHorizontal: 20,
         paddingVertical: 12,
         borderRadius: 12,
+    },
+    // Loading Overlay Styles
+    loadingOverlay: {
+        zIndex: 1000,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    loadingBox: {
+        width: '80%',
+        padding: 30,
+        borderRadius: 24,
+        alignItems: 'center',
+        borderWidth: 1,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.1,
+        shadowRadius: 20,
+        elevation: 5,
+    },
+    loadingText: {
+        fontSize: 18,
+        fontWeight: '700',
+        marginTop: 20,
+        textAlign: 'center',
+    },
+    loadingSubtext: {
+        fontSize: 14,
+        marginTop: 8,
+        textAlign: 'center',
+    },
+    cardHeader: {
+        position: 'absolute',
+        top: 30,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
     }
 });

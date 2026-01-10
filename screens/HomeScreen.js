@@ -17,6 +17,7 @@ import {
   Platform,
   Image
 } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
@@ -24,6 +25,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import { useTheme } from '../context/ThemeContext';
 import { SPACING } from '../constants/theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Mic, Mic2 } from 'lucide-react-native';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -437,22 +440,20 @@ export default function HomeScreen({ navigation }) {
         </View>
         <View style={styles.cardActions}>
           <View style={styles.actionIcons}>
-            {item.source === 'upload' ? (
-              <View style={styles.actionIcon}>
+            <View style={[styles.actionIcon, { backgroundColor: colors.tint }]}>
+              {item.source === 'upload' ? (
                 <Feather name="file" size={16} color={colors.textSecondary} />
-              </View>
-            ) : (
-              <View style={styles.actionIcon}>
-                <Feather name="mic" size={16} color={colors.textSecondary} />
-              </View>
-            )}
+              ) : (
+                <Mic size={16} color={colors.textSecondary} />
+              )}
+            </View>
           </View>
           <TouchableOpacity
             disabled={isPreparing}
             onPress={() => toggleFavorite(item.id)}
           >
             {item.isFavorite ? (
-              <Feather name="star" size={18} color="#000" fill="#000" />
+              <Feather name="star" size={18} color={isDark ? "#FFF" : "#000"} fill={isDark ? "#FFF" : "#000"} />
             ) : (
               <Feather name="star" size={18} color={isPreparing ? colors.border : colors.textSecondary} />
             )}
@@ -460,7 +461,7 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         {isPreparing && (
-          <View style={styles.progressBarContainer}>
+          <View style={[styles.progressBarContainer, { backgroundColor: isDark ? colors.border : '#E4E4E7' }]}>
             <View style={[styles.progressBar, { width: `${progress * 100}%`, backgroundColor: colors.primary }]} />
           </View>
         )}
@@ -476,7 +477,11 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.header}>
         <View style={styles.brandMark}>
           <View style={[styles.logoPulse, { backgroundColor: colors.tint }]}>
-            <Image source={require('../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
+            <Image
+              source={isDark ? require('../assets/logo_white.png') : require('../assets/logo.png')}
+              style={styles.headerLogo}
+              resizeMode="contain"
+            />
           </View>
           <View>
             <Text style={[styles.logoText, { color: colors.text }]}>Memry</Text>
@@ -488,8 +493,8 @@ export default function HomeScreen({ navigation }) {
           onPress={() => setShowAccountMenu(true)}
           activeOpacity={0.7}
         >
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>O</Text>
+          <View style={[styles.avatar, { backgroundColor: isDark ? colors.primary : '#1a1a1a' }]}>
+            <Text style={[styles.avatarText, { color: isDark ? colors.background : '#fff' }]}>O</Text>
           </View>
           <Feather name="chevron-down" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} />
         </TouchableOpacity>
@@ -497,7 +502,7 @@ export default function HomeScreen({ navigation }) {
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
-        <View style={[styles.searchBar, { backgroundColor: colors.inputBackground }]}>
+        <View style={[styles.searchBar, { backgroundColor: colors.inputBackground, borderColor: colors.border, shadowColor: colors.shadow }]}>
           <Feather name="search" size={20} color={colors.textSecondary} />
           <TextInput
             placeholder="Search"
@@ -514,15 +519,24 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Filters */}
-      <View style={styles.filterContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
+      {/* Filters with Progressive Blur */}
+      <View style={[styles.filterContainer, { position: 'relative' }]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScroll}
+          style={{ flex: 1 }}
+        >
           {filters.map((filter) => (
             <TouchableOpacity
               key={filter.id}
               style={[
                 styles.filterChip,
-                { backgroundColor: activeFilter === filter.id ? colors.primary : colors.tint }
+                {
+                  backgroundColor: activeFilter === filter.id ? colors.primary : colors.tint,
+                  borderColor: activeFilter === filter.id ? colors.primary : colors.border,
+                  shadowColor: colors.shadow
+                }
               ]}
               onPress={() => setActiveFilter(filter.id)}
               onLongPress={() => !filter.isDefault && deleteFilter(filter.id)}
@@ -543,29 +557,64 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           ))}
           <TouchableOpacity
-            style={[styles.filterChip, { backgroundColor: colors.tint, width: 40, justifyContent: 'center', paddingHorizontal: 0 }]}
+            style={[styles.filterChip, { backgroundColor: colors.tint, width: 40, justifyContent: 'center', paddingHorizontal: 0, borderColor: colors.border }]}
             onPress={() => setShowNewFilterModal(true)}
           >
             <Feather name="plus" size={16} color={colors.text} />
           </TouchableOpacity>
         </ScrollView>
+
+        {/* Left Blur */}
+        <LinearGradient
+          colors={[colors.background, 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.leftBlur}
+          pointerEvents="none"
+        />
+
+        {/* Right Blur */}
+        <LinearGradient
+          colors={['transparent', colors.background]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.rightBlur}
+          pointerEvents="none"
+        />
       </View>
 
-      {/* Cards List */}
-      <FlatList
-        data={getFilteredCards()}
-        renderItem={renderItem}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Feather name="inbox" size={48} color={colors.textSecondary} style={{ opacity: 0.5 }} />
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              {searchQuery ? 'No cards found' : 'No cards yet'}
-            </Text>
-          </View>
-        }
-      />
+      {/* Cards List with Progressive Blur */}
+      <View style={{ flex: 1, position: 'relative' }}>
+        <FlatList
+          data={getFilteredCards()}
+          renderItem={renderItem}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Feather name="inbox" size={48} color={colors.textSecondary} style={{ opacity: 0.5 }} />
+              <Text style={[styles.emptyText, { color: colors.textSecondary, fontFamily: 'Inter_400Regular' }]}>
+                {searchQuery ? 'No cards found' : 'No cards yet'}
+              </Text>
+            </View>
+          }
+        />
+
+        {/* Top Blur */}
+        <LinearGradient
+          colors={[colors.background, 'transparent']}
+          style={styles.topBlur}
+          pointerEvents="none"
+        />
+
+        {/* Bottom Blur */}
+        <LinearGradient
+          colors={['transparent', colors.background]}
+          style={styles.bottomBlur}
+          pointerEvents="none"
+        />
+      </View>
 
       {/* FAB Menu */}
       {isFabExpanded && (
@@ -672,9 +721,9 @@ export default function HomeScreen({ navigation }) {
                 }
                 }
               >
-                <View style={[styles.contextMenuIconBox, { backgroundColor: colors.tint }]}>
+                <View style={[styles.contextMenuIconBox, { backgroundColor: colors.tint, }]}>
                   {selectedCard?.isFavorite ? (
-                    <Feather name="star" size={16} color="#000" fill="#000" />
+                    <Feather name="star" size={16} color={isDark ? "#FFF" : "#000"} fill={isDark ? "#FFF" : "#000"} />
                   ) : (
                     <Feather name="star" size={16} color={colors.text} />
                   )}
@@ -800,11 +849,19 @@ export default function HomeScreen({ navigation }) {
                     key={filter.id}
                     style={[
                       styles.filterAssignItem,
-                      { backgroundColor: isAssigned ? colors.tint : 'transparent' }
+                      {
+                        backgroundColor: isAssigned ? colors.tint : 'transparent',
+                        borderColor: isAssigned ? colors.primary : 'transparent',
+                        borderWidth: 1
+                      }
                     ]}
                     onPress={() => assignCardToFilter(filter.id)}
                   >
                     <View style={styles.filterAssignLeft}>
+                      {/* Selection Marker */}
+                      {isAssigned && (
+                        <View style={[styles.selectionMarker, { backgroundColor: colors.primary }]} />
+                      )}
                       <View style={[styles.filterAssignIconBox, { backgroundColor: colors.tint }]}>
                         <Feather name={filter.icon} size={16} color={colors.text} />
                       </View>
@@ -833,7 +890,7 @@ export default function HomeScreen({ navigation }) {
                 closeWithAnimation(setShowCardMenu);
               }}
             >
-              <Text style={[styles.modernButtonText, { color: colors.card, fontWeight: '600' }]}>Done</Text>
+              <Text style={[styles.modernButtonText, { color: colors.card, fontWeight: '600' }]}>Apply Changes</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -987,8 +1044,8 @@ export default function HomeScreen({ navigation }) {
             ]}
           >
             <View style={styles.accountMenuHeader}>
-              <View style={styles.avatarLarge}>
-                <Text style={{ color: '#fff', fontSize: 20, fontWeight: '600' }}>O</Text>
+              <View style={[styles.avatarLarge, { backgroundColor: isDark ? colors.primary : '#18181B' }]}>
+                <Text style={{ color: isDark ? colors.background : '#fff', fontSize: 20, fontWeight: '600' }}>O</Text>
               </View>
               <Text style={[styles.accountName, { color: colors.text }]}>User</Text>
               <Text style={[styles.accountEmail, { color: colors.textSecondary }]}>user@example.com</Text>
@@ -997,7 +1054,13 @@ export default function HomeScreen({ navigation }) {
             <View style={[styles.accountMenuDivider, { backgroundColor: colors.border }]} />
 
             <View style={styles.accountMenuSection}>
-              <TouchableOpacity style={styles.accountMenuItem}>
+              <TouchableOpacity
+                style={styles.accountMenuItem}
+                onPress={() => {
+                  closeWithAnimation(setShowAccountMenu);
+                  navigation.navigate('Settings');
+                }}
+              >
                 <View style={[styles.accountMenuIconBox, { backgroundColor: colors.tint }]}>
                   <Feather name="user" size={16} color={colors.text} />
                 </View>
@@ -1005,7 +1068,13 @@ export default function HomeScreen({ navigation }) {
                 <Feather name="chevron-right" size={16} color={colors.textSecondary} style={{ marginLeft: 'auto' }} />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.accountMenuItem}>
+              <TouchableOpacity
+                style={styles.accountMenuItem}
+                onPress={() => {
+                  closeWithAnimation(setShowAccountMenu);
+                  navigation.navigate('Settings');
+                }}
+              >
                 <View style={[styles.accountMenuIconBox, { backgroundColor: colors.tint }]}>
                   <Feather name="settings" size={16} color={colors.text} />
                 </View>
@@ -1013,7 +1082,13 @@ export default function HomeScreen({ navigation }) {
                 <Feather name="chevron-right" size={16} color={colors.textSecondary} style={{ marginLeft: 'auto' }} />
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.accountMenuItem}>
+              <TouchableOpacity
+                style={styles.accountMenuItem}
+                onPress={() => {
+                  closeWithAnimation(setShowAccountMenu);
+                  navigation.navigate('Settings');
+                }}
+              >
                 <View style={[styles.accountMenuIconBox, { backgroundColor: colors.tint }]}>
                   <Feather name="help-circle" size={16} color={colors.text} />
                 </View>
@@ -1025,7 +1100,16 @@ export default function HomeScreen({ navigation }) {
             <View style={[styles.accountMenuDivider, { backgroundColor: colors.border }]} />
 
             <View style={styles.accountMenuSection}>
-              <TouchableOpacity style={styles.accountMenuItem}>
+              <TouchableOpacity
+                style={styles.accountMenuItem}
+                onPress={() => {
+                  closeWithAnimation(setShowAccountMenu);
+                  Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Sign Out", style: "destructive" }
+                  ]);
+                }}
+              >
                 <View style={[styles.accountMenuIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.1)' }]}>
                   <Feather name="log-out" size={16} color="#ef4444" />
                 </View>
@@ -1075,12 +1159,12 @@ const styles = StyleSheet.create({
   },
   logoText: {
     fontSize: 22,
-    fontWeight: '800',
+    fontFamily: 'Inter_600SemiBold',
     letterSpacing: -0.5,
   },
   logoSubtext: {
     fontSize: 11,
-    fontWeight: '600',
+    fontFamily: 'Inter_600SemiBold',
     opacity: 0.6,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -1097,14 +1181,12 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 10,
-    backgroundColor: '#18181B',
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
-    color: '#fff',
     fontSize: 11,
-    fontWeight: '700',
+    fontFamily: 'Inter_700Bold',
   },
   searchContainer: {
     paddingHorizontal: SPACING.m,
@@ -1117,10 +1199,7 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 12,
     gap: 10,
-    borderColor: '#e5e7ebff',
     borderWidth: 1,
-    strokeWidth: 1,
-    shadowColor: "#e5e7ebff",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -1130,6 +1209,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
+    fontFamily: 'Inter_400Regular',
   },
   filterContainer: {
     marginBottom: SPACING.m - 6,
@@ -1146,10 +1226,7 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 12,
     gap: 6,
-    borderColor: '#e5e7ebff',
     borderWidth: 1,
-    strokeWidth: 1,
-    shadowColor: "#e5e7ebff",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -1157,12 +1234,13 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.m - 22,
   },
   filterText: {
-    fontWeight: '500',
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
   },
   listContent: {
     paddingHorizontal: SPACING.m,
     paddingBottom: 80,
+    marginTop: SPACING.m - 10,
   },
   card: {
     padding: 16,
@@ -1183,7 +1261,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontFamily: 'Inter_600SemiBold',
     flex: 1,
     marginRight: 8,
     letterSpacing: -0.2,
@@ -1200,7 +1278,7 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 13,
-    fontWeight: '500',
+    fontFamily: 'Inter_500Medium',
   },
   cardActions: {
     flexDirection: 'row',
@@ -1214,7 +1292,6 @@ const styles = StyleSheet.create({
   actionIcon: {
     padding: 6,
     borderRadius: 8,
-    backgroundColor: 'rgba(0,0,0,0.03)',
   },
   emptyState: {
     alignItems: 'center',
@@ -1224,6 +1301,7 @@ const styles = StyleSheet.create({
   emptyText: {
     marginTop: 16,
     fontSize: 16,
+    fontFamily: 'Inter_500Medium',
   },
   fab: {
     position: 'absolute',
@@ -1484,6 +1562,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  selectionMarker: {
+    position: 'absolute',
+    left: 0,
+    top: 12,
+    bottom: 12,
+    width: 4,
+    borderTopRightRadius: 4,
+    borderBottomRightRadius: 4,
+  },
   filterAssignText: {
     fontSize: 15,
     fontWeight: '600',
@@ -1513,7 +1600,6 @@ const styles = StyleSheet.create({
     left: 8,
     right: 8,
     height: 3,
-    backgroundColor: '#E4E4E7',
     borderBottomLeftRadius: 40,
     borderBottomRightRadius: 40,
     overflow: 'hidden',
@@ -1545,11 +1631,9 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#18181B',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
-    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -1591,5 +1675,37 @@ const styles = StyleSheet.create({
     height: 1,
     marginVertical: 4,
     marginHorizontal: 12,
+  },
+  topBlur: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 40,
+    zIndex: 1,
+  },
+  bottomBlur: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 60,
+    zIndex: 1,
+  },
+  leftBlur: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 20,
+    zIndex: 1,
+  },
+  rightBlur: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 20,
+    zIndex: 1,
   },
 });

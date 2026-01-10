@@ -110,7 +110,7 @@ const MessageItem = ({ item, onNavigate }) => {
             const remainingText = item.content.substring(lastIndex);
             if (remainingText.trim()) {
                 result.push(
-                    <Text key="text-final" style={[styles.messageText, { color: isUser ? '#FFF' : colors.text, marginTop: 8 }]}>
+                    <Text key="text-final" style={[styles.messageText, { color: isUser ? (isDark ? colors.background : "#FFF") : colors.text, marginTop: 8 }]}>
                         {remainingText.trim()}
                     </Text>
                 );
@@ -120,7 +120,7 @@ const MessageItem = ({ item, onNavigate }) => {
         }
 
         return (
-            <Text style={[styles.messageText, { color: isUser ? '#FFF' : colors.text }]}>
+            <Text style={[styles.messageText, { color: isUser ? (isDark ? colors.background : "#FFF") : colors.text }]}>
                 {item.content}
             </Text>
         );
@@ -133,7 +133,7 @@ const MessageItem = ({ item, onNavigate }) => {
         ]}>
             {!isUser && (
                 <View style={[styles.aiAvatar, { backgroundColor: colors.primary }]}>
-                    <Sparkles size={14} color="#FFF" />
+                    <Sparkles size={14} color={isDark ? colors.background : "#FFF"} />
                 </View>
             )}
             <View style={[
@@ -353,7 +353,7 @@ export default function AIChatScreen({ route, navigation }) {
                                     { backgroundColor: input.trim() ? colors.primary : colors.textSecondary, opacity: input.trim() ? 1 : 0.5 }
                                 ]}
                             >
-                                <ArrowUp size={20} color="#FFF" />
+                                <ArrowUp size={20} color={isDark ? colors.background : "#FFF"} />
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -379,7 +379,6 @@ const styles = StyleSheet.create({
         width: 44,
         height: 44,
         borderRadius: 22,
-        backgroundColor: '#FFFFFF',
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: "#000",
@@ -394,7 +393,7 @@ const styles = StyleSheet.create({
     },
     headerTitle: {
         fontSize: 18,
-        fontWeight: '700',
+        fontFamily: 'Inter_600SemiBold',
     },
     statusDot: {
         width: 6,
@@ -426,6 +425,7 @@ const styles = StyleSheet.create({
         width: 28,
         height: 28,
         borderRadius: 14,
+        backgroundColor: '#0F172A',
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 8,
@@ -439,6 +439,7 @@ const styles = StyleSheet.create({
     messageText: {
         fontSize: 15,
         lineHeight: 22,
+        fontFamily: 'Inter_400Regular',
     },
     loadingWrapper: {
         flexDirection: 'row',
@@ -473,6 +474,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
         paddingTop: 4,
         paddingBottom: 4,
+        fontFamily: 'Inter_400Regular',
     },
     sendButton: {
         width: 48,
@@ -503,7 +505,7 @@ const styles = StyleSheet.create({
     },
     actionLabel: {
         fontSize: 14,
-        fontWeight: '700',
+        fontFamily: 'Inter_700Bold',
     },
     actionDesc: {
         fontSize: 12,

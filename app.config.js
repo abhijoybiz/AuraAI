@@ -23,6 +23,20 @@ module.exports = {
 
     userInterfaceStyle: "light",
 
+    "plugins": [
+      [
+        "expo-navigation-bar",
+        {
+          "backgroundColor": "#0f172a",
+          "barStyle": "light",
+          "borderColor": "#1f2937",
+          "visibility": "visible",
+          "behavior": "inset-swipe",
+          "position": "relative"
+        }
+      ]
+    ],
+
     splash: {
       image: "./assets/logo.png",
       resizeMode: "contain",
@@ -43,8 +57,8 @@ module.exports = {
         backgroundColor: "#ffffff"
       },
       navigationBar: {
-        visible: "leanback",
-        backgroundColor: "#00000000"
+        visible: false,
+        backgroundColor: "#00000000",
       },
       package: "com.anonymous.expoapp"
     },

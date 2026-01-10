@@ -23,11 +23,14 @@ import { useTheme } from '../context/ThemeContext';
 import * as FileSystem from 'expo-file-system/legacy';
 import Constants from 'expo-constants';
 import { FlatList } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
 // Loading Step Component
 const LoadingStep = ({ label, status, isLast }) => {
+    const { colors, isDark } = useTheme();
     const rotation = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
@@ -52,15 +55,15 @@ const LoadingStep = ({ label, status, isLast }) => {
 
     const getStatusColor = () => {
         if (status === 'ongoing') return '#F97316';
-        if (status === 'complete') return '#22C55E';
-        if (status === 'failed') return '#EF4444';
-        return '#A1A1AA';
+        if (status === 'complete') return colors.success;
+        if (status === 'failed') return colors.error;
+        return colors.textSecondary;
     };
 
     const getDotColor = () => {
-        if (status === 'ongoing' || status === 'complete') return '#000000';
-        if (status === 'failed') return '#EF4444';
-        return '#A1A1AA';
+        if (status === 'ongoing' || status === 'complete') return colors.primary;
+        if (status === 'failed') return colors.error;
+        return colors.textSecondary;
     };
 
     return (
@@ -70,7 +73,7 @@ const LoadingStep = ({ label, status, isLast }) => {
                 {!isLast && (
                     <View style={[
                         styles.stepLine,
-                        { backgroundColor: status === 'complete' ? '#22C55E' : '#E4E4E7' }
+                        { backgroundColor: status === 'complete' ? colors.success : colors.border }
                     ]} />
                 )}
             </View>
@@ -78,18 +81,21 @@ const LoadingStep = ({ label, status, isLast }) => {
                 <View style={styles.stepHeaderRow}>
                     <Text style={[
                         styles.stepLabel,
-                        { color: status === 'pending' ? '#A1A1AA' : '#18181B' }
+                        {
+                            color: status === 'pending' ? colors.textSecondary : colors.text,
+                            fontFamily: 'Inter_600SemiBold'
+                        }
                     ]}>
                         {label}
                     </Text>
                     {status === 'ongoing' && (
                         <Animated.View style={{ transform: [{ rotate: rotateInterpolate }] }}>
-                            <View style={styles.spinner} />
+                            <View style={[styles.spinner, { borderColor: colors.border, borderTopColor: colors.primary }]} />
                         </Animated.View>
                     )}
                 </View>
                 {(status === 'ongoing' || status === 'complete' || status === 'failed') && (
-                    <Text style={[styles.stepStatusText, { color: getStatusColor(), fontWeight: '700' }]}>
+                    <Text style={[styles.stepStatusText, { color: getStatusColor(), fontFamily: 'Inter_700Bold' }]}>
                         {status === 'ongoing' ? 'Processing...' : status === 'complete' ? 'Ready' : 'Failed'}
                     </Text>
                 )}
@@ -134,6 +140,7 @@ export default function ResultsScreen({ route, navigation }) {
     const [activeTranscriptIndex, setActiveTranscriptIndex] = useState(-1);
     const [hasFlashcards, setHasFlashcards] = useState(false);
     const [hasQuiz, setHasQuiz] = useState(false);
+    const [hasNotes, setHasNotes] = useState(false);
     const [hasChat, setHasChat] = useState(false);
     const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
 
@@ -170,80 +177,85 @@ export default function ResultsScreen({ route, navigation }) {
         console.log('========================');
     }, []);
 
-    // Initial load
+    // Sound cleanup on unmount
     useEffect(() => {
-        loadSound();
-
-        const init = async () => {
-            const idFromParams = route.params?.id;
-
-            if (!idFromParams) {
-                console.log('[INIT] New recording detected');
-                const newId = await autoSaveResult();
-                if (newId) {
-                    await startProcessingFlow(newId, 0);
-                }
-            } else {
-                setCurrentCardId(idFromParams);
-
-                const storedCards = await AsyncStorage.getItem('@memry_cards');
-                if (storedCards) {
-                    const cards = JSON.parse(storedCards);
-                    const card = cards.find(c => c.id === idFromParams);
-
-                    if (card) {
-                        // Load existing data and set flags
-                        if (card.transcript) {
-                            console.log('[INIT] Loading existing transcript');
-                            setTranscript(card.transcript);
-                            setTranscriptCallMade(true);
-                        }
-
-                        if (card.summary) {
-                            console.log('[INIT] Loading existing summary');
-                            setSummary(card.summary);
-                            setSummaryCallMade(true);
-                        }
-
-                        if (card.flashcards) setHasFlashcards(true);
-                        if (card.quiz) setHasQuiz(true);
-
-                        // Check completion
-                        if (card.status === 'ready') {
-                            console.log('[INIT] Card is READY');
-                            setIsStage1Complete(true);
-                            setLoadingStage(4);
-                            return;
-                        }
-
-                        if (card.transcript && card.summary) {
-                            console.log('[INIT] Both exist - marking ready');
-                            setIsStage1Complete(true);
-                            setLoadingStage(4);
-                            await updateCardToReady(idFromParams);
-                            return;
-                        }
-
-                        if (card.status === 'preparing') {
-                            console.log('[INIT] Resuming processing');
-                            const startStage = Math.floor((card.progress || 0) * 4);
-                            setLoadingStage(startStage);
-                            await startProcessingFlow(idFromParams, startStage);
-                        }
-                    }
-                }
-            }
-        };
-
-        init();
-        checkChat();
-
         return () => {
             if (soundRef.current) {
                 soundRef.current.unloadAsync();
             }
         };
-    }, [uri]);
+    }, []);
+
+    // Initial load & Focus refresh
+    useFocusEffect(
+        React.useCallback(() => {
+            loadSound(); // Keep sound loading separate if needed, but it's safe here
+
+            const init = async () => {
+                const idFromParams = route.params?.id || currentCardId;
+
+                if (!idFromParams) {
+                    console.log('[INIT] New recording detected');
+                    const newId = await autoSaveResult();
+                    if (newId) {
+                        await startProcessingFlow(newId, 0);
+                    }
+                } else {
+                    setCurrentCardId(idFromParams);
+
+                    const storedCards = await AsyncStorage.getItem('@memry_cards');
+                    if (storedCards) {
+                        const cards = JSON.parse(storedCards);
+                        const card = cards.find(c => c.id === idFromParams);
+
+                        if (card) {
+                            // Load existing data and set flags
+                            if (card.transcript) {
+                                setTranscript(card.transcript);
+                                setTranscriptCallMade(true);
+                            }
+
+                            if (card.summary) {
+                                setSummary(card.summary);
+                                setSummaryCallMade(true);
+                            }
+
+                            setHasFlashcards(!!card.flashcards);
+                            setHasQuiz(!!card.quiz);
+                            setHasNotes(!!card.notes);
+
+                            // Check completion
+                            if (card.status === 'ready') {
+                                setIsStage1Complete(true);
+                                setLoadingStage(4);
+                                return;
+                            }
+
+                            if (card.transcript && card.summary) {
+                                setIsStage1Complete(true);
+                                setLoadingStage(4);
+                                await updateCardToReady(idFromParams);
+                                return;
+                            }
+
+                            if (card.status === 'preparing') {
+                                const startStage = Math.floor((card.progress || 0) * 4);
+                                setLoadingStage(startStage);
+                                await startProcessingFlow(idFromParams, startStage);
+                            }
+                        }
+                    }
+                }
+            };
+
+            init();
+            checkChat();
+
+            return () => {
+                // cleanup if needed
+            };
+        }, [uri, currentCardId])
+    );
 
     const handleGenerateSummary = async () => {
         console.log('[MANUAL] Generate Summary clicked');
@@ -805,7 +817,7 @@ ${transcriptText}`
                         const cells = trimmedLine.split('|').filter(c => c.trim().length > 0);
                         if (trimmedLine.includes('---')) return null; // Skip table separator lines
                         return (
-                            <View key={index} style={styles.mdTableRow}>
+                            <View key={index} style={[styles.mdTableRow, { borderBottomColor: colors.border }]}>
                                 {cells.map((cell, cIdx) => (
                                     <View key={cIdx} style={[styles.mdTableCell, { borderColor: colors.border }]}>
                                         <Text style={[styles.mdText, {
@@ -833,7 +845,7 @@ ${transcriptText}`
                                 }
                                 if (part.startsWith('`') && part.endsWith('`')) {
                                     return (
-                                        <View key={pIdx} style={styles.mdCodeInline}>
+                                        <View key={pIdx} style={[styles.mdCodeInline, { backgroundColor: colors.tint }]}>
                                             <Text style={styles.mdCodeText}>{part.slice(1, -1)}</Text>
                                         </View>
                                     );
@@ -849,8 +861,8 @@ ${transcriptText}`
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.backButton, { backgroundColor: colors.card }]}>
+            <View style={[styles.header, { borderBottomColor: colors.border }]}>
+                <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.backButton, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
                     <ChevronLeft size={24} color={colors.text} />
                 </TouchableOpacity>
                 <Text style={[styles.headerTitle, { color: colors.text }]}>Results</Text>
@@ -864,21 +876,21 @@ ${transcriptText}`
                         </Text>
                         <View style={styles.metaRow}>
                             <View style={styles.metaItem}>
-                                <Calendar size={14} color="#A1A1AA" style={styles.metaIcon} />
-                                <Text style={styles.metaText}>{date || 'Jan 24 2025'}</Text>
+                                <Calendar size={14} color={colors.textSecondary} style={styles.metaIcon} />
+                                <Text style={[styles.metaText, { color: colors.textSecondary }]}>{date || 'Jan 24 2025'}</Text>
                             </View>
                             <View style={styles.metaItem}>
-                                <Clock size={14} color="#A1A1AA" style={styles.metaIcon} />
-                                <Text style={styles.metaText}>{currentTimeDisplay}</Text>
+                                <Clock size={14} color={colors.textSecondary} style={styles.metaIcon} />
+                                <Text style={[styles.metaText, { color: colors.textSecondary }]}>{currentTimeDisplay}</Text>
                             </View>
                             <View style={styles.metaItem}>
-                                <AudioLines size={14} color="#A1A1AA" style={styles.metaIcon} />
-                                <Text style={styles.metaText}>{duration || '15min'}</Text>
+                                <AudioLines size={14} color={colors.textSecondary} style={styles.metaIcon} />
+                                <Text style={[styles.metaText, { color: colors.textSecondary }]}>{duration || '15min'}</Text>
                             </View>
                         </View>
                     </View>
 
-                    <View style={[styles.playerPill, { backgroundColor: isDark ? colors.tint : '#F2F2F7' }]}>
+                    <View style={[styles.playerPill, { backgroundColor: colors.tint }]}>
                         <TouchableOpacity onPress={handlePlayPause} style={styles.playButton}>
                             {isPlaying ? (
                                 <Pause size={20} color={colors.text} fill={colors.text} />
@@ -893,7 +905,7 @@ ${transcriptText}`
                             value={positionMillis}
                             onSlidingComplete={handleSliderChange}
                             minimumTrackTintColor={colors.primary}
-                            maximumTrackTintColor={isDark ? 'rgba(255,255,255,0.1)' : '#3c3c3cff'}
+                            maximumTrackTintColor={isDark ? "#ffffffff" : "#000000ff"}
                             thumbTintColor={colors.primary}
                         />
                         <Text style={[styles.timestamp, { color: colors.text }]}>{formatTime(positionMillis)}</Text>
@@ -902,7 +914,7 @@ ${transcriptText}`
 
                 {!isStage1Complete ? (
                     <View style={styles.loadingContainer}>
-                        <View style={styles.overallProgressContainer}>
+                        <View style={[styles.overallProgressContainer]}>
                             <View style={[styles.overallProgressBar, { width: `${(loadingStage / 4) * 100}%` }]} />
                         </View>
                         <Text style={styles.loadingSubtext}>
@@ -924,7 +936,7 @@ ${transcriptText}`
                             ].map((tab) => (
                                 <TouchableOpacity
                                     key={tab.id}
-                                    style={[styles.tabItem, activeTab === tab.id && { backgroundColor: isDark ? colors.tint : '#F2F2F7' }]}
+                                    style={[styles.tabItem, activeTab === tab.id && { backgroundColor: colors.tint }]}
                                     onPress={() => setActiveTab(tab.id)}
                                 >
                                     {React.cloneElement(tab.icon, { color: activeTab === tab.id ? colors.text : colors.textSecondary })}
@@ -937,49 +949,59 @@ ${transcriptText}`
 
                         <View style={{ flex: 1 }}>
                             {activeTab === 'transcripts' && (
-                                <FlatList
-                                    ref={transcriptListRef}
-                                    data={transcript}
-                                    keyExtractor={(item) => item.id}
-                                    extraData={activeTranscriptIndex}
-                                    onScrollToIndexFailed={info => {
-                                        const wait = new Promise(resolve => setTimeout(resolve, 500));
-                                        wait.then(() => {
-                                            transcriptListRef.current?.scrollToIndex({ index: info.index, animated: true });
-                                        });
-                                    }}
-                                    renderItem={({ item, index }) => (
-                                        <TouchableOpacity
-                                            activeOpacity={0.7}
-                                            onPress={() => handleTranscriptPress(item)}
-                                            style={styles.transcriptItem}
-                                        >
-                                            <View style={[
-                                                styles.timestampBadge,
-                                                activeTranscriptIndex === index
-                                                    ? { backgroundColor: colors.primary }
-                                                    : { backgroundColor: isDark ? colors.tint : '#F2F2F7' }
-                                            ]}>
-                                                <Text style={[
-                                                    styles.timestampText,
+                                <View style={{ flex: 1, position: 'relative' }}>
+                                    <FlatList
+                                        ref={transcriptListRef}
+                                        data={transcript}
+                                        keyExtractor={(item) => item.id}
+                                        extraData={activeTranscriptIndex}
+                                        showsVerticalScrollIndicator={false}
+                                        onScrollToIndexFailed={info => {
+                                            const wait = new Promise(resolve => setTimeout(resolve, 500));
+                                            wait.then(() => {
+                                                transcriptListRef.current?.scrollToIndex({ index: info.index, animated: true });
+                                            });
+                                        }}
+                                        renderItem={({ item, index }) => (
+                                            <TouchableOpacity
+                                                activeOpacity={0.7}
+                                                onPress={() => handleTranscriptPress(item)}
+                                                style={styles.transcriptItem}
+                                            >
+                                                <View style={[
+                                                    styles.timestampBadge,
                                                     activeTranscriptIndex === index
-                                                        ? { color: isDark ? colors.background : '#FFFFFF' }
-                                                        : { color: colors.textSecondary }
+                                                        ? { backgroundColor: colors.primary }
+                                                        : { backgroundColor: colors.tint }
                                                 ]}>
-                                                    {item.time}
+                                                    <Text style={[
+                                                        styles.timestampText,
+                                                        activeTranscriptIndex === index
+                                                            ? { color: isDark ? colors.background : '#FFFFFF', fontFamily: 'Inter_700Bold' }
+                                                            : { color: colors.textSecondary, fontFamily: 'Inter_700Bold' }
+                                                    ]}>
+                                                        {item.time}
+                                                    </Text>
+                                                </View>
+                                                <Text style={[
+                                                    styles.transcriptContent,
+                                                    {
+                                                        color: activeTranscriptIndex === index ? colors.text : colors.textSecondary,
+                                                        fontFamily: activeTranscriptIndex === index ? 'Inter_600SemiBold' : 'Inter_500Medium'
+                                                    }
+                                                ]}>
+                                                    {item.text}
                                                 </Text>
-                                            </View>
-                                            <Text style={[
-                                                styles.transcriptContent,
-                                                { color: activeTranscriptIndex === index ? colors.text : (isDark ? 'rgba(255,255,255,0.4)' : '#A1A1AA') },
-                                                activeTranscriptIndex === index ? { fontWeight: '800' } : { fontWeight: '500' }
-                                            ]}>
-                                                {item.text}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    )}
-                                    contentContainerStyle={{ paddingBottom: 100 }}
-                                />
+                                            </TouchableOpacity>
+                                        )}
+                                        contentContainerStyle={{ paddingBottom: 120, paddingTop: 20 }}
+                                    />
+                                    <LinearGradient
+                                        colors={[colors.background, 'transparent']}
+                                        style={styles.topBlur}
+                                        pointerEvents="none"
+                                    />
+                                </View>
                             )}
 
                             {activeTab === 'summary' && (
@@ -1027,8 +1049,8 @@ ${transcriptText}`
                             {activeTab === 'materials' && (
                                 <ScrollView style={styles.transcriptContainer} showsVerticalScrollIndicator={false}>
                                     <View style={styles.materialsContainer}>
-                                        <Text style={styles.materialsTitle}>Materials</Text>
-                                        <Text style={styles.materialsDesc}>
+                                        <Text style={[styles.materialsTitle, { color: colors.text }]}>Materials</Text>
+                                        <Text style={[styles.materialsDesc, { color: colors.textSecondary }]}>
                                             Use the transcript to generate notes, mind maps, flashcards & quizzes instantly.
                                         </Text>
 
@@ -1049,15 +1071,27 @@ ${transcriptText}`
                                                     secondary: hasQuiz ? 'Generated' : null
                                                 },
                                                 { id: 'journey', label: 'Journey Map', icon: <Route size={32} color={colors.text} strokeWidth={1.5} /> },
-                                                { id: 'notes', label: 'Notes', icon: <BookOpenText size={32} color={colors.text} strokeWidth={1.5} /> }
+                                                {
+                                                    id: 'notes',
+                                                    label: hasNotes ? 'View Notes' : 'Notes',
+                                                    icon: <BookOpenText size={32} color={colors.text} strokeWidth={1.5} />,
+                                                    screen: 'Notes',
+                                                    secondary: hasNotes ? 'Generated' : null
+                                                }
                                             ].map((item, idx) => (
                                                 <TouchableOpacity
                                                     key={idx}
                                                     style={[styles.materialCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                                                    onPress={() => item.screen && navigation.navigate(item.screen, {
-                                                        transcript: Array.isArray(transcript) ? transcript.map(t => t.text).join('\n') : transcript,
-                                                        id: currentCardId
-                                                    })}
+                                                    onPress={() => {
+                                                        if (item.screen) {
+                                                            navigation.navigate(item.screen, {
+                                                                transcript: Array.isArray(transcript) ? transcript.map(t => t.text).join('\n') : transcript,
+                                                                id: currentCardId
+                                                            });
+                                                        } else {
+                                                            Alert.alert("Coming Soon", "The Journey Map feature is currently under development.");
+                                                        }
+                                                    }}
                                                 >
                                                     <View style={styles.materialIconContainer}>
                                                         {item.icon}
@@ -1151,7 +1185,7 @@ const styles = StyleSheet.create({
     },
     headerTitle: {
         fontSize: 18,
-        fontWeight: '700',
+        fontFamily: 'Inter_600SemiBold',
         letterSpacing: -0.3,
     },
     content: {
@@ -1176,8 +1210,7 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: 22,
-        fontWeight: '700',
-        color: '#000',
+        fontFamily: 'Inter_600SemiBold',
         marginBottom: 12,
         letterSpacing: -0.5,
         lineHeight: 28,
@@ -1196,11 +1229,9 @@ const styles = StyleSheet.create({
     },
     metaText: {
         fontSize: 13,
-        color: '#8E8E93',
-        fontWeight: '500',
+        fontFamily: 'Inter_500Medium',
     },
     playerPill: {
-        backgroundColor: '#F2F2F7',
         borderRadius: 16,
         height: 56,
         flexDirection: 'row',
@@ -1221,7 +1252,6 @@ const styles = StyleSheet.create({
     timestamp: {
         fontSize: 13,
         fontWeight: '600',
-        color: '#000',
         width: 65,
         textAlign: 'right',
         fontVariant: ['tabular-nums'],
@@ -1290,8 +1320,6 @@ const styles = StyleSheet.create({
         height: 14,
         borderRadius: 7,
         borderWidth: 2.5,
-        borderColor: '#E4E4E7',
-        borderTopColor: '#000000',
     },
     stepStatusText: {
         fontSize: 14,
@@ -1307,10 +1335,8 @@ const styles = StyleSheet.create({
         width: 44,
         height: 44,
         borderRadius: 22,
-        backgroundColor: '#FFFFFF',
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
@@ -1319,12 +1345,10 @@ const styles = StyleSheet.create({
     // Stage 2 Tab Bar
     tabBar: {
         flexDirection: 'row',
-        backgroundColor: '#FFFFFF',
         borderRadius: 16,
         padding: 4,
         marginBottom: 24,
         borderWidth: 1,
-        borderColor: '#F2F2F7',
         marginTop: -15,
     },
     tabItem: {
@@ -1337,15 +1361,13 @@ const styles = StyleSheet.create({
         borderRadius: 12,
     },
     tabItemActive: {
-        backgroundColor: '#F2F2F7',
     },
     tabLabel: {
         fontSize: 14,
-        fontWeight: '600',
+        fontFamily: 'Inter_600SemiBold',
         color: '#A1A1AA',
     },
     tabLabelActive: {
-        color: '#18181B',
     },
     // Transcript Styles
     transcriptContainer: {
@@ -1376,9 +1398,29 @@ const styles = StyleSheet.create({
     timestampBadgeInactive: {
         // dynamic background
     },
+    visitChatText: {
+        fontSize: 15,
+        fontFamily: 'Inter_600SemiBold',
+    },
+    topBlur: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 60,
+        zIndex: 1,
+    },
+    bottomBlur: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 80,
+        zIndex: 1,
+    },
     timestampText: {
         fontSize: 12,
-        fontWeight: '700',
+        fontFamily: 'Inter_700Bold',
     },
     timestampTextActive: {
         // dynamic color
@@ -1390,7 +1432,7 @@ const styles = StyleSheet.create({
         flex: 1,
         fontSize: 16,
         lineHeight: 24,
-        fontWeight: '500',
+        fontFamily: 'Inter_600SemiBold',
     },
     // Summary Styles
     summaryContainer: {
@@ -1410,14 +1452,12 @@ const styles = StyleSheet.create({
     },
     summaryTitleText: {
         fontSize: 16,
-        fontWeight: '700',
-        color: '#18181B',
+        fontFamily: 'Inter_700Bold',
     },
     expandButton: {
         width: 36,
         height: 36,
         borderRadius: 18,
-        backgroundColor: '#F9FAFB',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -1481,26 +1521,24 @@ const styles = StyleSheet.create({
     summaryBullet: {
         fontSize: 16,
         marginRight: 8,
-        color: '#18181B',
     },
     summaryText: {
         flex: 1,
         fontSize: 15,
         lineHeight: 22,
-        color: '#3F3F46',
     },
     // Markdown Specific Styles
-    mdH1: { fontSize: 26, fontWeight: '800', marginVertical: 12 },
-    mdH2: { fontSize: 22, fontWeight: '700', marginVertical: 10, marginTop: 20 },
-    mdH3: { fontSize: 18, fontWeight: '700', marginVertical: 8, marginTop: 15 },
-    mdText: { fontSize: 15, lineHeight: 24, marginVertical: 4 },
+    mdH1: { fontSize: 26, fontFamily: 'Inter_800ExtraBold', marginVertical: 12 },
+    mdH2: { fontSize: 22, fontFamily: 'Inter_700Bold', marginVertical: 10, marginTop: 20 },
+    mdH3: { fontSize: 18, fontFamily: 'Inter_700Bold', marginVertical: 8, marginTop: 15 },
+    mdText: { fontSize: 15, lineHeight: 24, marginVertical: 4, fontFamily: 'Inter_400Regular' },
     mdBulletRow: { flexDirection: 'row', marginLeft: 10, marginVertical: 2 },
-    mdBullet: { fontSize: 18, marginRight: 8, lineHeight: 24 },
+    mdBullet: { fontSize: 18, marginRight: 8, lineHeight: 24, fontFamily: 'Inter_400Regular' },
     mdHr: { height: 1.5, backgroundColor: '#F2F2F7', marginVertical: 16, borderRadius: 1 },
     mdQuote: { borderLeftWidth: 4, borderLeftColor: '#F97316', paddingLeft: 16, marginVertical: 8, fontStyle: 'italic' },
     mdNumberedRow: { flexDirection: 'row', marginLeft: 10, marginVertical: 4 },
-    mdNumberedLabel: { fontWeight: '700', marginRight: 8, fontSize: 15, width: 20 },
-    mdCodeInline: { backgroundColor: '#F2F2F7', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4, marginHorizontal: 2 },
+    mdNumberedLabel: { fontFamily: 'Inter_700Bold', marginRight: 8, fontSize: 15, width: 20 },
+    mdCodeInline: { paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4, marginHorizontal: 2 },
     mdCodeText: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 13, color: '#F97316' },
     mdTableRow: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#F2F2F7', paddingVertical: 8 },
     mdTableCell: { flex: 1, paddingHorizontal: 4 },
@@ -1513,7 +1551,7 @@ const styles = StyleSheet.create({
     },
     materialsTitle: {
         fontSize: 26,
-        fontWeight: '800',
+        fontFamily: 'Inter_800ExtraBold',
         marginBottom: 10,
     },
     materialsDesc: {
@@ -1522,6 +1560,7 @@ const styles = StyleSheet.create({
         lineHeight: 22,
         marginBottom: 20,
         paddingHorizontal: 30,
+        fontFamily: 'Inter_400Regular',
     },
     materialsGrid: {
         flexDirection: 'row',
@@ -1551,9 +1590,8 @@ const styles = StyleSheet.create({
     },
     materialLabel: {
         fontSize: 14,
-        fontWeight: '800',
+        fontFamily: 'Inter_800ExtraBold',
         textAlign: 'center',
-        color: '#18181B',
         lineHeight: 18,
     },
     // Chat Bar
@@ -1578,7 +1616,6 @@ const styles = StyleSheet.create({
     chatInput: {
         flex: 1,
         fontSize: 16,
-        color: '#18181B',
         paddingRight: 12,
         marginLeft: 16, // Add margin since container padding is gone
     },
@@ -1598,7 +1635,15 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
     },
     visitChatText: {
-        fontSize: 16, // Slightly larger
-        fontWeight: '700',
-    }
+        fontSize: 15,
+        fontFamily: 'Inter_600SemiBold',
+    },
+    topBlur: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 60,
+        zIndex: 1,
+    },
 });

@@ -15,19 +15,19 @@ export const COLORS = {
         tint: "#F4F4F5", // Zinc 100 for secondary buttons/chips
     },
     dark: {
-        primary: "#FAFAFA", // Zinc 50
-        background: "#09090B", // Zinc 950
-        card: "#09090B",
-        text: "#FAFAFA",
-        textSecondary: "#A1A1AA", // Zinc 400
-        border: "#27272A", // Zinc 800
-        notification: "#EF4444",
-        success: "#22C55E",
-        error: "#EF4444",
-        overlay: "rgba(255,255,255,0.1)",
-        inputBackground: "#27272A", // Zinc 800
+        primary: "#F4F4F5", // Soft Zinc 100
+        background: "#0D0D0F", // Deep neutral gray-black
+        card: "#17171C", // Slightly lighter for depth
+        text: "#E4E4E7", // Muted Zinc 200
+        textSecondary: "#9DA3AE", // Muted cool gray
+        border: "#2D2D33", // Subtle borders
+        notification: "#F87171", // Softer Red 400
+        success: "#4ADE80", // Softer Green 400
+        error: "#F87171",
+        overlay: "rgba(0,0,0,0.7)",
+        inputBackground: "#1C1C21", // Between card and background
         shadow: "#000000",
-        tint: "#27272A",
+        tint: "#26262E", // For secondary actions
     },
 };
 

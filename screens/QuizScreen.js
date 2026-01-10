@@ -10,12 +10,28 @@ import {
     ActivityIndicator,
     Platform
 } from 'react-native';
-import { ChevronLeft, Pencil, Plus, Minus, Check, X, RotateCcw, ChevronRight } from 'lucide-react-native';
+import { ChevronLeft, Pencil, Plus, Minus, Check, X, RotateCcw, ChevronRight, Sparkles } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { aiService } from '../services/ai.js';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
+
+const LoadingOverlay = ({ visible, message }) => {
+    const { colors, isDark } = useTheme();
+    if (!visible) return null;
+
+    return (
+        <View style={[StyleSheet.absoluteFill, styles.loadingOverlay, { backgroundColor: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(255,255,255,0.8)' }]}>
+            <View style={[styles.loadingBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.loadingText, { color: colors.text }]}>{message || 'Generating...'}</Text>
+                <Text style={[styles.loadingSubtext, { color: colors.textSecondary }]}>Analyzing your lecture to create the best quiz</Text>
+            </View>
+        </View>
+    );
+};
 
 const QuizOption = ({ option, isSelected, isCorrect, showFeedback, onPress, disabled }) => {
     const { colors, isDark } = useTheme();
@@ -81,34 +97,45 @@ export default function QuizScreen({ route, navigation }) {
         }
     };
 
-    React.useEffect(() => {
-        const loadStored = async () => {
-            if (route.params?.id) {
-                const storedCards = await AsyncStorage.getItem('@memry_cards');
-                if (storedCards) {
-                    const cards = JSON.parse(storedCards);
-                    const card = cards.find(c => c.id === route.params.id);
-                    if (card?.quiz) {
-                        setQuestions(card.quiz);
+    useFocusEffect(
+        React.useCallback(() => {
+            const loadStored = async () => {
+                if (route.params?.id) {
+                    const storedCards = await AsyncStorage.getItem('@memry_cards');
+                    if (storedCards) {
+                        const cards = JSON.parse(storedCards);
+                        const card = cards.find(c => c.id === route.params.id);
+                        if (card?.quiz) {
+                            setQuestions(card.quiz);
+                        }
                     }
                 }
-            }
-        };
-        loadStored();
-    }, [route.params?.id]);
+            };
+            loadStored();
+        }, [route.params?.id])
+    );
 
     const handleGenerate = async () => {
-        if (!transcript) return;
+        if (!transcript || transcript.trim().length === 0) {
+            Alert.alert("Missing Content", "No transcript found for this lecture. Please wait for transcription to complete.");
+            return;
+        }
+
         setLoading(true);
         try {
             const data = await aiService.generateQuiz(transcript, count);
-            setQuestions(data);
-            setCurrentIndex(0);
-            setScore(0);
-            setQuizFinished(false);
-            await saveQuiz(data);
+            if (data && data.length > 0) {
+                setQuestions(data);
+                setCurrentIndex(0);
+                setScore(0);
+                setQuizFinished(false);
+                await saveQuiz(data);
+            } else {
+                Alert.alert("Generation Failed", "AI could not generate a quiz from this content. Try a different transcript.");
+            }
         } catch (error) {
             console.error('Error generating quiz:', error);
+            Alert.alert("Error", error.message || "Failed to generate quiz. Please check your connection and try again.");
         } finally {
             setLoading(false);
         }
@@ -142,6 +169,7 @@ export default function QuizScreen({ route, navigation }) {
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <LoadingOverlay visible={loading} message="Building Quiz..." />
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.backButton, { backgroundColor: isDark ? colors.tint : '#FFFFFF', borderColor: colors.border }]}>
                     <ChevronLeft size={24} color={colors.text} />
@@ -157,7 +185,7 @@ export default function QuizScreen({ route, navigation }) {
                     </View>
                     <Text style={[styles.setupTitle, { color: colors.text }]}>Take a Quiz</Text>
                     <Text style={[styles.setupDesc, { color: colors.textSecondary }]}>
-                        Test your knowledge from this lecture with AI-generated questions.
+                        Test your knowledge from this lecture with tailored questions.
                     </Text>
 
                     <View style={[styles.stepperContainer, { backgroundColor: isDark ? colors.tint : '#F9F9F9', borderColor: colors.border }]}>
@@ -193,13 +221,22 @@ export default function QuizScreen({ route, navigation }) {
                 </View>
             ) : quizFinished ? (
                 <View style={styles.setupContainer}>
-                    <View style={[styles.iconCircle, { backgroundColor: 'rgba(34, 197, 94, 0.1)' }]}>
-                        <Check size={40} color="#22C55E" />
+                    <View style={[styles.iconCircle, { backgroundColor: (score / questions.length) >= 0.7 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)' }]}>
+                        {(score / questions.length) >= 0.7 ? <Check size={40} color="#22C55E" /> : <X size={40} color="#EF4444" />}
                     </View>
-                    <Text style={[styles.setupTitle, { color: colors.text }]}>Quiz Completed!</Text>
-                    <Text style={[styles.scoreText, { color: colors.primary }]}>{score} / {questions.length}</Text>
+                    <Text style={[styles.setupTitle, { color: colors.text }]}>
+                        {(score / questions.length) >= 0.7 ? 'Quiz Passed!' : 'Quiz Not Passed'}
+                    </Text>
+                    <Text style={[styles.scoreText, { color: (score / questions.length) >= 0.7 ? colors.primary : '#EF4444' }]}>{score} / {questions.length}</Text>
+                    <Text style={[styles.feedbackStatus, { color: (score / questions.length) >= 0.7 ? '#22C55E' : '#EF4444' }]}>
+                        {(score / questions.length) >= 0.7 ? 'Great Effort!' : 'Needs Review'}
+                    </Text>
                     <Text style={[styles.setupDesc, { color: colors.textSecondary }]}>
-                        {score === questions.length ? "Perfect score! You're a master of this topic." : "Good effort! Try again to improve your score."}
+                        {(score / questions.length) >= 0.7
+                            ? (score === questions.length
+                                ? "Outstanding! You got every question right, demonstrating complete mastery of this lecture."
+                                : `Well done! You correctly answered ${score} questions, showing a solid understanding of the material.`)
+                            : `You missed ${questions.length - score} questions this time. To improve, we recommend reviewing the transcript and summary before trying again.`}
                     </Text>
 
                     <TouchableOpacity
@@ -214,7 +251,7 @@ export default function QuizScreen({ route, navigation }) {
                 <View style={styles.content}>
                     <View style={styles.progressHeader}>
                         <Text style={[styles.progressText, { color: colors.textSecondary }]}>Question {currentIndex + 1} of {questions.length}</Text>
-                        <View style={styles.progressBarBg}>
+                        <View style={[styles.progressBarBg, { backgroundColor: colors.border }]}>
                             <View style={[styles.progressBarFill, { width: `${((currentIndex + 1) / questions.length) * 100}%`, backgroundColor: '#F97316' }]} />
                         </View>
                     </View>
@@ -319,7 +356,14 @@ const styles = StyleSheet.create({
     scoreText: {
         fontSize: 48,
         fontWeight: '900',
-        marginBottom: 10,
+        marginBottom: 4,
+    },
+    feedbackStatus: {
+        fontSize: 18,
+        fontWeight: '700',
+        marginBottom: 12,
+        textTransform: 'uppercase',
+        letterSpacing: 1,
     },
     stepperContainer: {
         flexDirection: 'row',
@@ -374,7 +418,6 @@ const styles = StyleSheet.create({
     },
     progressBarBg: {
         height: 6,
-        backgroundColor: '#E4E4E7',
         borderRadius: 3,
     },
     progressBarFill: {
@@ -422,5 +465,35 @@ const styles = StyleSheet.create({
     nextButtonText: {
         fontSize: 16,
         fontWeight: '700',
+    },
+    // Loading Overlay Styles
+    loadingOverlay: {
+        zIndex: 1000,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    loadingBox: {
+        width: '80%',
+        padding: 30,
+        borderRadius: 24,
+        alignItems: 'center',
+        borderWidth: 1,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.1,
+        shadowRadius: 20,
+        elevation: 5,
+    },
+    loadingText: {
+        fontSize: 18,
+        fontWeight: '700',
+        marginTop: 20,
+        textAlign: 'center',
+    },
+    loadingSubtext: {
+        fontSize: 14,
+        marginTop: 8,
+        textAlign: 'center',
     }
 });

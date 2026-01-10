@@ -14,18 +14,18 @@ export const ThemedText = ({ style, type = "body", color, children, ...props }) 
         }
     };
 
-    const getFontWeight = () => {
+    const getFontFamily = () => {
         switch (type) {
-            case "title": return "700";
-            case "subtitle": return "600";
-            default: return "400";
+            case "title": return "Inter_700Bold";
+            case "subtitle": return "Inter_600SemiBold";
+            default: return "Inter_400Regular";
         }
     };
 
     const baseStyle = {
         color: color || colors.text,
         fontSize: getFontSize(),
-        fontWeight: getFontWeight(),
+        fontFamily: getFontFamily(),
     };
 
     return (

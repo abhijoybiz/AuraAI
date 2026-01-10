@@ -1,11 +1,20 @@
-﻿import React from 'react';
+﻿import React, { useEffect } from 'react';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from "react";
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import * as NavigationBar from "expo-navigation-bar";
+
+import {
+  useFonts,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+  Inter_800ExtraBold,
+} from '@expo-google-fonts/inter';
+import * as SplashScreen from 'expo-splash-screen';
 
 import HomeScreen from './screens/HomeScreen';
 import ResultsScreen from './screens/ResultsScreen';
@@ -17,11 +26,51 @@ import SettingsScreen from './screens/SettingsScreen';
 import FlashcardsScreen from './screens/FlashcardsScreen';
 import QuizScreen from './screens/QuizScreen';
 import AIChatScreen from './screens/AIChatScreen';
+import NotesScreen from './screens/NotesScreen';
+
+// Keep the splash screen visible while we fetch resources
+SplashScreen.preventAutoHideAsync();
 
 const Stack = createNativeStackNavigator();
 
 function Navigation() {
   const { isDark } = useTheme();
+
+  useEffect(() => {
+    // Robust configuration for true Android fullscreen
+    const configureFullscreen = async () => {
+      if (Platform.OS === 'android') {
+        try {
+          // 1. Hide the navigation bar completely
+          await NavigationBar.setVisibilityAsync("hidden");
+
+          // 2. set behavior to 'overlay-swipe'
+          // This ensures that even if the user swipes it up, 
+          // it overlays content (doesn't resize app) and hides again automatically.
+          await NavigationBar.setBehaviorAsync("overlay-swipe");
+
+          // 3. Make it transparent just in case it momentarily appears
+          await NavigationBar.setBackgroundColorAsync("transparent");
+        } catch (error) {
+          console.error('Android fullscreen configuration error:', error);
+        }
+      }
+    };
+
+    // Apply on mount and theme change
+    configureFullscreen();
+
+    // Re-apply when the app returns from background (resume)
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        configureFullscreen();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isDark]);
 
   return (
     <NavigationContainer theme={isDark ? DarkTheme : DefaultTheme}>
@@ -36,28 +85,30 @@ function Navigation() {
         <Stack.Screen name="Flashcards" component={FlashcardsScreen} />
         <Stack.Screen name="Quiz" component={QuizScreen} />
         <Stack.Screen name="AIChat" component={AIChatScreen} />
+        <Stack.Screen name="Notes" component={NotesScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
 
 export default function App() {
-  useEffect(() => {
-    const hideNavigationBar = async () => {
-      if (Platform.OS === 'android') {
-        try {
-          await NavigationBar.setVisibilityAsync("hidden");
-          await NavigationBar.setBehaviorAsync("overlay-swipe");
-          await NavigationBar.setPositionAsync("absolute");
-          await NavigationBar.setBackgroundColorAsync("#00000000");
-        } catch (error) {
-          console.log('Navigation bar configuration error:', error);
-        }
-      }
-    };
+  const [fontsLoaded] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    Inter_800ExtraBold,
+  });
 
-    hideNavigationBar();
-  }, []);
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) {
+    return null;
+  }
 
   return (
     <ThemeProvider>
