@@ -34,10 +34,29 @@ import NotesScreen from './screens/NotesScreen';
 import AuthScreen from './screens/AuthScreen';
 import AccessDeniedScreen from './screens/AccessDeniedScreen';
 
+import { Audio } from 'expo-av';
+
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
 const Stack = createNativeStackNavigator();
+
+// Configure Audio globally
+const configureAudio = async () => {
+  try {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: true,
+      interruptionModeIOS: 1, // InterruptionModeIOS.DoNotMix
+      shouldDuckAndroid: true,
+      interruptionModeAndroid: 1, // InterruptionModeAndroid.DoNotMix
+      playThroughEarpieceAndroid: false,
+    });
+  } catch (e) {
+    console.error('Audio setup error:', e);
+  }
+};
 
 /**
  * Loading component for auth transitions
@@ -49,34 +68,45 @@ const LoadingScreen = () => (
 );
 
 function Navigation() {
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { user, loading, isWhitelisted } = useAuth();
 
   useEffect(() => {
-    const configureFullscreen = async () => {
+    configureAudio();
+    const configureNavigationBar = async () => {
       if (Platform.OS === 'android') {
         try {
-          await NavigationBar.setVisibilityAsync("hidden");
-          await NavigationBar.setBehaviorAsync("overlay-swipe");
-          await NavigationBar.setBackgroundColorAsync("transparent");
+          // Show the navigation bar instead of hiding i
+
+          NavigationBar.setVisibilityAsync("hidden");
+          NavigationBar.setBehaviorAsync("overlay-swipe");
+          await NavigationBar.setBackgroundColorAsync(colors.background);
+          await NavigationBar.setButtonStyleAsync(isDark ? "light" : "dark");
+
+          // Match the navigation bar with the theme
+          const navBarColor = colors.background;
+          const buttonStyle = isDark ? "light" : "dark";
+
+          await NavigationBar.setBackgroundColorAsync(navBarColor);
+          await NavigationBar.setButtonStyleAsync(buttonStyle);
         } catch (error) {
-          console.error('Android fullscreen configuration error:', error);
+          console.error('Android navigation bar configuration error:', error);
         }
       }
     };
 
-    configureFullscreen();
+    configureNavigationBar();
 
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
-        configureFullscreen();
+        configureNavigationBar();
       }
     });
 
     return () => {
       subscription.remove();
     };
-  }, [isDark]);
+  }, [isDark, colors.background]);
 
   // Auth Guard Logic
   if (loading) return <LoadingScreen />;

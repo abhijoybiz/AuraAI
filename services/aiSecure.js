@@ -39,6 +39,45 @@ const ensureWhitelisted = async () => {
     }
 };
 
+// Helper to attempt robust JSON parsing
+const resilientJSONParse = (jsonString) => {
+    if (!jsonString) return null;
+
+    // Attempt 1: Direct Parse
+    try {
+        return JSON.parse(jsonString);
+    } catch (e) {
+        // Attempt 2: Fix specific invalid Markdown escapes common in LLM output
+        // Converts \* -> *, \_ -> _, \` -> `, \' -> '
+        const step1 = jsonString.replace(/\\(\*|_|`|')/g, '$1');
+        try {
+            return JSON.parse(step1);
+        } catch (e2) {
+            // Attempt 3: Fix literal newlines (dangerous but necessary for bad LLM output)
+            // Converts actual newlines to \n escape sequences
+            const step2 = step1.replace(/(?:\r\n|\r|\n)/g, '\\n');
+            try {
+                return JSON.parse(step2);
+            } catch (e3) {
+                // Attempt 4: Aggressive strip of all "bad" backslashes
+                // Deletes any backslash not part of a valid JSON escape: " \ / b f n r t u
+                const step3 = jsonString.replace(/\\(?![/\"\\bfnrtu])/g, '');
+                try {
+                    return JSON.parse(step3);
+                } catch (e4) {
+                    // Log fatal error details for debugging
+                    console.error('CRITICAL: Final JSON Parse Failure');
+                    console.error('Attempt 1 (Direct) Error:', e.message);
+                    console.error('Attempt 4 (Aggressive) Error:', e4.message);
+                    console.error('Bad String Snapshot:', jsonString.substring(0, 100) + '...');
+                    console.error('Bad String Full:', jsonString);
+                    return null;
+                }
+            }
+        }
+    }
+};
+
 // Generic function caller for Edge Functions
 const callEdgeFunction = async (functionName, body) => {
     if (!SUPABASE_URL) {
@@ -139,8 +178,8 @@ export const aiServiceSecure = {
             const end = content.lastIndexOf(']');
 
             if (start !== -1 && end !== -1) {
-                const jsonStr = content.substring(start, end + 1);
-                const parsed = JSON.parse(jsonStr);
+                // Use robust parser
+                const parsed = resilientJSONParse(content.substring(start, end + 1));
                 if (Array.isArray(parsed) && parsed.length > 0) {
                     return parsed;
                 }
@@ -174,8 +213,8 @@ export const aiServiceSecure = {
             const end = content.lastIndexOf(']');
 
             if (start !== -1 && end !== -1) {
-                const jsonStr = content.substring(start, end + 1);
-                const parsed = JSON.parse(jsonStr);
+                // Use robust parser
+                const parsed = resilientJSONParse(content.substring(start, end + 1));
                 if (Array.isArray(parsed) && parsed.length > 0) {
                     return parsed;
                 }
@@ -209,8 +248,8 @@ export const aiServiceSecure = {
             const end = content.lastIndexOf(']');
 
             if (start !== -1 && end !== -1) {
-                const jsonStr = content.substring(start, end + 1);
-                const parsed = JSON.parse(jsonStr);
+                // Use robust parser
+                const parsed = resilientJSONParse(content.substring(start, end + 1));
                 if (Array.isArray(parsed) && parsed.length > 0) {
                     return parsed;
                 }
@@ -254,17 +293,11 @@ export const aiServiceSecure = {
         await ensureWhitelisted();
 
         try {
-            // This would need a separate action in the edge function
-            // For now, we can use the notes action with a modified prompt
             const result = await callEdgeFunction('ai-complete', {
-                action: 'notes',
+                action: 'modify_notes',
                 payload: {
-                    text: `Modify the following notes based on this instruction: "${userPrompt}"
-                    
-                    Current notes (JSON format):
-                    ${JSON.stringify(currentBlocks)}
-                    
-                    Return the UPDATED notes as a JSON array.`
+                    currentBlocks,
+                    userPrompt
                 }
             });
 
@@ -273,8 +306,8 @@ export const aiServiceSecure = {
             const end = content.lastIndexOf(']');
 
             if (start !== -1 && end !== -1) {
-                const jsonStr = content.substring(start, end + 1);
-                const parsed = JSON.parse(jsonStr);
+                // Use robust parser
+                const parsed = resilientJSONParse(content.substring(start, end + 1));
                 if (Array.isArray(parsed)) {
                     return parsed;
                 }

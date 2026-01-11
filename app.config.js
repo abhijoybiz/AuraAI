@@ -45,6 +45,9 @@ module.exports = {
     name: "Memry",
     slug: "memry",
     version: APP_VERSION,
+    runtimeVersion: {
+      policy: "appVersion"
+    },
     orientation: "portrait",
 
     icon: "./assets/logo.png",
@@ -55,12 +58,10 @@ module.exports = {
       [
         "expo-navigation-bar",
         {
-          backgroundColor: "#0f172a",
-          barStyle: "light",
-          borderColor: "#1f2937",
+          backgroundColor: "#FFFFFF",
+          barStyle: "dark",
           visibility: "visible",
-          behavior: "inset-swipe",
-          position: "relative"
+          behavior: "inset-touch"
         }
       ]
     ],
@@ -91,10 +92,11 @@ module.exports = {
         backgroundColor: "#0f172a"
       },
       navigationBar: {
-        visible: false,
-        backgroundColor: "#00000000",
+        visible: true,
+        backgroundColor: "#FFFFFF",
+        barStyle: "dark-content",
       },
-      softwareKeyboardLayoutMode: "adjustResize",
+      softwareKeyboardLayoutMode: "resize",
       package: "com.memry.app",
       versionCode: parseInt(BUILD_NUMBER, 10),
       permissions: [
@@ -127,17 +129,17 @@ module.exports = {
 
       // EAS Build configuration
       eas: {
-        projectId: process.env.EAS_PROJECT_ID || "YOUR_EAS_PROJECT_ID"
+        projectId: process.env.EAS_PROJECT_ID || "a00c48e8-46c4-4e80-be83-b58d2c40e7f9"
       }
     },
 
     // Update configuration
     updates: {
       fallbackToCacheTimeout: 0,
-      url: IS_PROD ? "https://u.expo.dev/YOUR_EAS_PROJECT_ID" : undefined
+      url: "https://u.expo.dev/a00c48e8-46c4-4e80-be83-b58d2c40e7f9"
     },
 
     // Owner for EAS
-    owner: process.env.EXPO_OWNER || "your-expo-username"
+    owner: process.env.EXPO_OWNER || "abhijoybiz"
   }
 };

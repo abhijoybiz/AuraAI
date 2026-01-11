@@ -99,7 +99,7 @@ serve(async (req) => {
         }
 
         let messages: Message[] = []
-        let model = 'llama-3.3-70b-versatile'
+        let model = 'openai/gpt-oss-120b'
         let temperature = 0.7
         let maxTokens = 2048
 
@@ -127,48 +127,82 @@ ${payload.text}`
                 break
 
             case 'flashcards':
-                messages = [{
-                    role: 'user',
-                    content: `Based on the following transcript, generate exactly ${payload.count || 5} flashcards as a JSON array of objects with "question" and "answer" keys. Ensure they cover the most important concepts. Return ONLY the JSON array starting with [ and ending with ].\n\nTranscript:\n${payload.text}`
-                }]
+                temperature = 0.1
+                messages = [
+                    {
+                        role: 'system',
+                        content: 'You are a professional educational assistant. Generate exactly the requested number of flashcards as a JSON array of objects with "question" and "answer" keys. Return ONLY the JSON array starting with [ and ending with ]. No conversational filler.'
+                    },
+                    {
+                        role: 'user',
+                        content: `Based on the following transcript, generate exactly ${payload.count || 5} flashcards.\n\nTranscript:\n${payload.text}`
+                    }
+                ]
                 break
 
             case 'quiz':
-                messages = [{
-                    role: 'user',
-                    content: `Based on the following transcript, generate a multiple-choice quiz with exactly ${payload.count || 5} questions. Return as a JSON array where each object has "question", "options" (array of 2-4 strings), and "correctAnswer" (string, must match one of the options). Return ONLY the JSON array starting with [ and ending with ].\n\nTranscript:\n${payload.text}`
-                }]
+                temperature = 0.1
+                messages = [
+                    {
+                        role: 'system',
+                        content: 'You are a professional educational assistant. Generate a multiple-choice quiz as a JSON array where each object has "question", "options" (array of 2-4 strings), and "correctAnswer" (string, must match one of the options). Return ONLY the JSON array starting with [ and ending with ]. No conversational filler.'
+                    },
+                    {
+                        role: 'user',
+                        content: `Based on the following transcript, generate a quiz with exactly ${payload.count || 5} questions.\n\nTranscript:\n${payload.text}`
+                    }
+                ]
                 break
 
             case 'notes':
-                messages = [{
-                    role: 'user',
-                    content: `Based on the following transcript, generate comprehensive study notes in a Notion-like structure. 
-                    Return as a JSON array where each object has "type" (choose from: "h1", "h2", "paragraph", "bullet", "numbered") and "content" (string). 
-                    - Use "h1" for the most important overarching topics.
-                    - Use "h2" for secondary sub-topics and sections.
-                    - Use "bullet" for unstructured lists of points or facts.
-                    - Use "numbered" for sequences, hierarchies, or chronological steps.
-                    - Use "paragraph" for narrative explanations and context.
-                    IMPORTANT: Within the "content" string, you SHOULD use **bold** for key concepts and *italics* for emphasis or definitions.
-                    Ensure the notes are logically organized, professional, and academically rigorous. Return ONLY the JSON array starting with [ and ending with ].\n\nTranscript:\n${payload.text}`
-                }]
+                temperature = 0.1
+                messages = [
+                    {
+                        role: 'system',
+                        content: `You are a professional educational assistant. Generate comprehensive study notes in a Notion-like structure. 
+                        Return as a JSON array where each object has "type" (choose from: "h1", "h2", "paragraph", "bullet", "numbered") and "content" (string). 
+                        - Use "h1" for the most important overarching topics.
+                        - Use "h2" for secondary sub-topics and sections.
+                        - Use "bullet" for unstructured lists of points or facts.
+                        - Use "numbered" for sequences, hierarchies, or chronological steps.
+                        - Use "paragraph" for narrative explanations and context.
+                        IMPORTANT: Within the "content" string, you SHOULD use **bold** and *italics*.
+                        
+                        CRITICAL JSON FORMATTING RULES:
+                        1. Do not use backslashes (\) to escape markdown characters.
+                        2. WRONG: "content": "This is \\*bold\\*"
+                        3. WRONG: "content": "This is \\**bold\\**"
+                        4. CORRECT: "content": "This is **bold**"
+                        5. CORRECT: "content": "This is *italics*"
+                        
+                        Only use backslashes for valid JSON control characters like quotes (\") or newlines (\\n).
+                        Return ONLY the JSON array starting with [ and ending with ].`
+                    },
+                    {
+                        role: 'user',
+                        content: `Generate logically organized, professional, and academically rigorous study notes based on this transcript:\n\n${payload.text}`
+                    }
+                ]
                 break
 
             case 'modify_notes':
-                messages = [{
-                    role: 'user',
-                    content: `You are an expert editor. Modify the following study notes based on this instruction: "${payload.userPrompt}". 
+                temperature = 0.1
+                messages = [
+                    {
+                        role: 'system',
+                        content: `You are an expert editor. Modify the provided study notes based on the user's instructions.
+                        Return the UPDATED notes as a JSON array where each object has "type" (h1, h2, paragraph, bullet, numbered) and "content" (string). 
+                        Maintain the Notion-like structure and rich formatting (**bold**, *italics*).
+                        Return ONLY the valid JSON array starting with [ and ending with ]. No explanations or conversational filler.`
+                    },
+                    {
+                        role: 'user',
+                        content: `Instruction: "${payload.userPrompt}"
                     
-                    Current notes (JSON format):
-                    ${JSON.stringify(payload.currentBlocks)}
-                    
-                    Instructions:
-                    1. Follow the user's request exactly (e.g., summarize, expand, simplify, reformat).
-                    2. Return the UPDATED notes as a JSON array where each object has "type" (h1, h2, paragraph, bullet, numbered) and "content" (string). 
-                    3. Maintain the Notion-like structure and rich formatting (**bold**, *italics*).
-                    4. Return ONLY the valid JSON array starting with [ and ending with ]. No explanations.`
-                }]
+                        Current notes (JSON):
+                        ${JSON.stringify(payload.currentBlocks)}`
+                    }
+                ]
                 break
 
             case 'chat':
