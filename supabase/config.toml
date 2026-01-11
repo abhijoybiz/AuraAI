@@ -1,0 +1,10 @@
+# supabase/functions/config.toml
+# Edge Function configuration
+
+[functions.transcribe]
+# Manual JWT verification is performed inside the function logic for whitelist checks.
+# Pre-gateway verification is disabled to avoid connectivity issues seen in some environments.
+verify_jwt = false
+
+[functions.ai-complete]
+verify_jwt = false

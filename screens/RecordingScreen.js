@@ -175,7 +175,7 @@ export default function RecordingScreen({ navigation }) {
       navigation.replace('Results', {
         uri,
         duration: formatTime(finalDuration),
-        date: new Date().toLocaleDateString(),
+        date: new Date().toISOString(),
         title: lectureTitle,
         source: 'recording'
       });

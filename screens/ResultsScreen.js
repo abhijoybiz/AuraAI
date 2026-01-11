@@ -13,18 +13,23 @@ import {
     TextInput,
     Alert,
     ActivityIndicator,
-    Modal
+    Modal,
+    KeyboardAvoidingView
 } from 'react-native';
 import { Audio } from 'expo-av';
 import Slider from '@react-native-community/slider';
 import { Play, Pause, Calendar, Clock, AudioLines, ChevronLeft, FileText, Layout, MessageSquare, List, Send, Info, BookSearch, NotepadText, TextAlignEnd, Layers, Pencil, Route, BookOpen, Maximize2, X, NotebookPen, BookOpenText } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
+import { useNetwork } from '../context/NetworkContext';
 import * as FileSystem from 'expo-file-system/legacy';
 import Constants from 'expo-constants';
 import { FlatList } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
+import aiService from '../services/ai';
+import { syncLectureToCloud } from '../services/lectureStorage';
+import { generateUUID } from '../lib/supabase';
 
 const { width } = Dimensions.get('window');
 
@@ -106,7 +111,20 @@ const LoadingStep = ({ label, status, isLast }) => {
 
 export default function ResultsScreen({ route, navigation }) {
     const { colors, isDark } = useTheme();
+    const { isOffline } = useNetwork();
     const { uri, duration, date, title, source } = route.params || {};
+
+    // Helper for safe date display
+    const formatDate = (dateString) => {
+        try {
+            if (!dateString) return '';
+            const d = new Date(dateString);
+            if (isNaN(d.getTime())) return dateString; // Fallback
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        } catch {
+            return dateString || '';
+        }
+    };
 
     const [isPlaying, setIsPlaying] = useState(false);
     const [positionMillis, setPositionMillis] = useState(0);
@@ -115,9 +133,16 @@ export default function ResultsScreen({ route, navigation }) {
     const [currentCardId, setCurrentCardId] = useState(route.params?.id || null);
 
     // API Configuration
-    const DEEPGRAM_API_KEY = Constants.expoConfig?.extra?.deepgramApiKey || '';
-    const GROQ_API_KEY = Constants.expoConfig?.extra?.groqApiKey || '';
-    const HTTP_REFERER = Constants.expoConfig?.extra?.httpReferer || 'http://localhost:8081';
+    // Use fallback to empty string and ensure we have a string type to prevent .substring() crashes
+    const DEEPGRAM_API_KEY = typeof Constants.expoConfig?.extra?.deepgramApiKey === 'string'
+        ? Constants.expoConfig.extra.deepgramApiKey
+        : '';
+    const GROQ_API_KEY = typeof Constants.expoConfig?.extra?.groqApiKey === 'string'
+        ? Constants.expoConfig.extra.groqApiKey
+        : '';
+    const HTTP_REFERER = (typeof Constants.expoConfig?.extra?.httpReferer === 'string'
+        ? Constants.expoConfig.extra.httpReferer
+        : 'http://localhost:8081');
 
     // Loading State
     const [loadingStage, setLoadingStage] = useState(0);
@@ -156,6 +181,16 @@ export default function ResultsScreen({ route, navigation }) {
 
     // API key validation
     useEffect(() => {
+        const isProduction = Constants.expoConfig?.extra?.isProduction;
+
+        // Skip direct API key validation in production as we use secure Edge Functions
+        if (isProduction) {
+            console.log('=== AI Service (Secure Production) ===');
+            console.log('Status: Routing via Supabase Edge Functions');
+            console.log('========================');
+            return;
+        }
+
         console.log('=== API Key Validation ===');
 
         if (!DEEPGRAM_API_KEY || !GROQ_API_KEY) {
@@ -171,9 +206,9 @@ export default function ResultsScreen({ route, navigation }) {
             return;
         }
 
-        console.log('✓ Deepgram API key loaded:', DEEPGRAM_API_KEY.substring(0, 10) + '...');
-        console.log('✓ Groq API key loaded:', GROQ_API_KEY.substring(0, 10) + '...');
-        console.log('✓ HTTP Referer:', HTTP_REFERER);
+        console.log('Deepgram API key status:', DEEPGRAM_API_KEY ? 'Loaded (' + DEEPGRAM_API_KEY.substring(0, 1) + '...)' : 'Missing');
+        console.log('Groq API key status:', GROQ_API_KEY ? 'Loaded (' + GROQ_API_KEY.substring(0, 1) + '...)' : 'Missing');
+        console.log('HTTP Referer:', HTTP_REFERER);
         console.log('========================');
     }, []);
 
@@ -260,6 +295,11 @@ export default function ResultsScreen({ route, navigation }) {
     const handleGenerateSummary = async () => {
         console.log('[MANUAL] Generate Summary clicked');
 
+        if (isOffline) {
+            Alert.alert("Offline Mode", "Internet connection is required to generate summaries.");
+            return;
+        }
+
         if (isGeneratingSummary || summary || summaryCallMade) {
             return;
         }
@@ -327,9 +367,18 @@ export default function ResultsScreen({ route, navigation }) {
             console.error('[PROCESS] No URI');
             return;
         }
+        if (isOffline) {
+            console.log('[PROCESS] ⚠️ Offline - skipping cloud processing');
+            Alert.alert(
+                "Offline Mode",
+                "Cannot process transcription or summaries while offline. We'll resume once you're back online.",
+                [{ text: "OK" }]
+            );
+            return;
+        }
 
         console.log(`[PROCESS] Starting from stage ${startStage}`);
-
+        setLoadingStage(startStage);
         let currentTranscript = [];
 
         try {
@@ -425,126 +474,43 @@ export default function ResultsScreen({ route, navigation }) {
 
     async function processTranscriptionReal() {
         try {
-            if (!DEEPGRAM_API_KEY) {
-                throw new Error('Deepgram API key not configured');
+            console.log('[AI-SERVICE] Requesting transcription...');
+
+            // Use the unified aiService which handles Dev/Prod switching
+            const result = await aiService.transcribeAudio(uri);
+
+            if (!result || !result.segments) {
+                throw new Error('Transcription service returned no data');
             }
 
-            console.log('[DEEPGRAM] Fetching audio...');
-            const fileInfo = await FileSystem.getInfoAsync(uri);
-            if (!fileInfo.exists) {
-                throw new Error('Audio file does not exist');
-            }
-
-            console.log('[DEEPGRAM] Reading blob...');
-            const audioResponse = await fetch(uri);
-            const blob = await audioResponse.blob();
-
-            console.log('[DEEPGRAM] Sending to API...');
-            const response = await fetch(
-                'https://api.deepgram.com/v1/listen?smart_format=true&utterances=true&punctuate=true&diarize=true',
-                {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Token ${DEEPGRAM_API_KEY}`,
-                        'Content-Type': 'audio/wav'
-                    },
-                    body: blob
-                }
-            );
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Deepgram error (${response.status}): ${errorText}`);
-            }
-
-            const data = await response.json();
-
-            if (!data.results || !data.results.utterances) {
-                throw new Error('Invalid Deepgram response: ' + JSON.stringify(data));
-            }
-
-            const utterances = data.results.utterances || [];
-            return utterances.map(u => ({
+            // Map segments to the internal format used by ResultsScreen
+            return result.segments.map(u => ({
                 id: Math.random().toString(36).substr(2, 9),
                 time: formatTimeSeconds(u.start),
                 start: u.start * 1000,
                 end: u.end * 1000,
-                text: u.transcript
+                text: u.text
             }));
 
         } catch (error) {
-            console.error('[DEEPGRAM] ❌', error);
+            console.error('[TRANSCRIPTION] ❌ Failed:', error);
             throw error;
         }
     }
 
     async function generateSummaryReal(transcriptsData) {
         try {
-            if (!GROQ_API_KEY) {
-                throw new Error('Groq API key not configured');
-            }
-
             const transcriptText = Array.isArray(transcriptsData)
                 ? transcriptsData.map(t => t.text).join('\n')
                 : transcriptsData;
 
-            console.log(`[GROQ] Sending ${transcriptText.length} chars...`);
+            console.log(`[AI-SERVICE] Requesting summary (${transcriptText.length} chars)...`);
 
-            const requestBody = {
-                model: 'llama-3.3-70b-versatile',
-                messages: [
-                    {
-                        role: 'user',
-                        content: `You are a professional educational assistant. Summarize the following lecture transcript using VERY RICH Markdown formatting:
-
-- Use **bold** for key terms and important concepts
-- Use ## H2 and ### H3 headers to organize sections
-- Use bullet points for unstructured lists
-- Use numbered lists (1. 2. 3.) for sequences, steps, or rankings
-- Use > blockquotes for important takeaways or quotes
-- Use --- for horizontal rules between major topics
-- Use inline code with \`\` for technical terms or formulas
-- Use tables for comparisons when applicable
-- Use *italics* for emphasis
-
-Here is the transcript to summarize:
-
-${transcriptText}`
-                    }
-                ]
-            };
-
-            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${GROQ_API_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Groq error (${response.status}): ${errorText}`);
-            }
-
-            const data = await response.json();
-
-            if (data.error) {
-                throw new Error(data.error.message || JSON.stringify(data.error));
-            }
-
-            const content = data.choices?.[0]?.message?.content;
-
-            if (!content) {
-                throw new Error('No content in response');
-            }
-
-            console.log('[GROQ] ✅ Success');
-            return content;
+            // Use the unified aiService which handles Dev/Prod switching
+            return await aiService.generateSummary(transcriptText);
 
         } catch (error) {
-            console.error('[GROQ] ❌', error);
+            console.error('[SUMMARY] ❌ Failed:', error);
             throw error;
         }
     }
@@ -565,6 +531,14 @@ ${transcriptText}`
                 );
                 await AsyncStorage.setItem('@memry_cards', JSON.stringify(updatedCards));
                 console.log(`[STORAGE] Saved ${key}`);
+
+                // Sync to cloud if card is ready (not during initial processing)
+                const updatedCard = updatedCards.find(c => c.id === id);
+                if (updatedCard && updatedCard.status === 'ready') {
+                    syncLectureToCloud(updatedCard).catch(err => {
+                        console.error('[CLOUD] Background sync error:', err);
+                    });
+                }
             }
         } catch (error) {
             console.error(`[STORAGE] Error saving ${key}:`, error);
@@ -596,6 +570,20 @@ ${transcriptText}`
                 );
                 await AsyncStorage.setItem('@memry_cards', JSON.stringify(updatedCards));
                 console.log('[STORAGE] Marked READY');
+
+                // Sync the completed lecture to Supabase
+                const readyCard = updatedCards.find(c => c.id === id);
+                if (readyCard) {
+                    syncLectureToCloud(readyCard).then(result => {
+                        if (result.success) {
+                            console.log('[CLOUD] ✅ Lecture synced to Supabase');
+                        } else {
+                            console.log('[CLOUD] ⚠️ Cloud sync deferred:', result.reason);
+                        }
+                    }).catch(err => {
+                        console.error('[CLOUD] Sync error:', err);
+                    });
+                }
             }
         } catch (error) {
             console.error('[STORAGE] Error updating to ready:', error);
@@ -608,13 +596,13 @@ ${transcriptText}`
             const storedCards = await AsyncStorage.getItem('@memry_cards');
             const cards = storedCards ? JSON.parse(storedCards) : [];
 
-            const newId = `rec_${Date.now()}`;
+            const newId = generateUUID();
             setCurrentCardId(newId);
 
             const newCard = {
                 id: newId,
                 title: title || `Lecture ${cards.length + 1}`,
-                date: date || new Date().toLocaleDateString(),
+                date: date || new Date().toISOString(),
                 duration: duration || '00:00:00',
                 uri: uri,
                 source: source || 'recording',
@@ -648,7 +636,14 @@ ${transcriptText}`
                 setTotalDurationMillis(status.durationMillis || 0);
             }
         } catch (error) {
-            console.error('[AUDIO] Error loading:', error);
+            console.log('[AUDIO] Load failed (expected if file missing):', error.message);
+            // Only alert if we are supposed to have audio
+            if (uri && uri.startsWith('file')) {
+                // Silent fail for background loading, or minimal alert
+                console.warn('[AUDIO] Local file missing');
+            } else {
+                Alert.alert("Audio Unavailable", "Could not load audio source.");
+            }
         }
     }
 
@@ -877,7 +872,7 @@ ${transcriptText}`
                         <View style={styles.metaRow}>
                             <View style={styles.metaItem}>
                                 <Calendar size={14} color={colors.textSecondary} style={styles.metaIcon} />
-                                <Text style={[styles.metaText, { color: colors.textSecondary }]}>{date || 'Jan 24 2025'}</Text>
+                                <Text style={[styles.metaText, { color: colors.textSecondary }]}>{formatDate(date) || 'Jan 24 2025'}</Text>
                             </View>
                             <View style={styles.metaItem}>
                                 <Clock size={14} color={colors.textSecondary} style={styles.metaIcon} />
@@ -1117,31 +1112,36 @@ ${transcriptText}`
 
             {
                 isStage1Complete && (
-                    <View style={[styles.chatBarContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        {hasChat ? (
-                            <TouchableOpacity
-                                style={[styles.visitChatButton, { backgroundColor: colors.primary }]}
-                                onPress={handleVisitChat}
-                            >
-                                <MessageSquare size={18} color={isDark ? colors.background : "#FFF"} style={{ marginRight: 10 }} />
-                                <Text style={[styles.visitChatText, { color: isDark ? colors.background : "#FFF" }]}>Visit Chat</Text>
-                            </TouchableOpacity>
-                        ) : (
-                            <>
-                                <TextInput
-                                    style={[styles.chatInput, { color: colors.text }]}
-                                    placeholder="Ask Memry"
-                                    placeholderTextColor={colors.textSecondary}
-                                    value={chatQuery}
-                                    onChangeText={setChatQuery}
-                                    onSubmitEditing={handleChatSubmit}
-                                />
-                                <TouchableOpacity style={[styles.sendButton, { backgroundColor: colors.tint }]} onPress={handleChatSubmit}>
-                                    <Send size={18} color={colors.text} />
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+                    >
+                        <View style={[styles.chatBarContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            {hasChat ? (
+                                <TouchableOpacity
+                                    style={[styles.visitChatButton, { backgroundColor: colors.primary }]}
+                                    onPress={handleVisitChat}
+                                >
+                                    <MessageSquare size={18} color={isDark ? colors.background : "#FFF"} style={{ marginRight: 10 }} />
+                                    <Text style={[styles.visitChatText, { color: isDark ? colors.background : "#FFF" }]}>Visit Chat</Text>
                                 </TouchableOpacity>
-                            </>
-                        )}
-                    </View>
+                            ) : (
+                                <>
+                                    <TextInput
+                                        style={[styles.chatInput, { color: colors.text }]}
+                                        placeholder="Ask Memry"
+                                        placeholderTextColor={colors.textSecondary}
+                                        value={chatQuery}
+                                        onChangeText={setChatQuery}
+                                        onSubmitEditing={handleChatSubmit}
+                                    />
+                                    <TouchableOpacity style={[styles.sendButton, { backgroundColor: colors.tint }]} onPress={handleChatSubmit}>
+                                        <Send size={18} color={colors.text} />
+                                    </TouchableOpacity>
+                                </>
+                            )}
+                        </View>
+                    </KeyboardAvoidingView>
                 )
             }
 

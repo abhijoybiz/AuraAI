@@ -2,8 +2,11 @@
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { NetworkProvider } from './context/NetworkContext';
+import OfflineDialog from './components/OfflineDialog';
 import { StatusBar } from 'expo-status-bar';
-import { Platform, AppState } from 'react-native';
+import { Platform, AppState, View, ActivityIndicator } from 'react-native';
 import * as NavigationBar from "expo-navigation-bar";
 
 import {
@@ -16,6 +19,7 @@ import {
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 
+// Screen Imports
 import HomeScreen from './screens/HomeScreen';
 import ResultsScreen from './screens/ResultsScreen';
 import LibraryScreen from './screens/LibraryScreen';
@@ -27,29 +31,33 @@ import FlashcardsScreen from './screens/FlashcardsScreen';
 import QuizScreen from './screens/QuizScreen';
 import AIChatScreen from './screens/AIChatScreen';
 import NotesScreen from './screens/NotesScreen';
+import AuthScreen from './screens/AuthScreen';
+import AccessDeniedScreen from './screens/AccessDeniedScreen';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
 const Stack = createNativeStackNavigator();
 
+/**
+ * Loading component for auth transitions
+ */
+const LoadingScreen = () => (
+  <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}>
+    <ActivityIndicator size="large" color="#18181B" />
+  </View>
+);
+
 function Navigation() {
   const { isDark } = useTheme();
+  const { user, loading, isWhitelisted } = useAuth();
 
   useEffect(() => {
-    // Robust configuration for true Android fullscreen
     const configureFullscreen = async () => {
       if (Platform.OS === 'android') {
         try {
-          // 1. Hide the navigation bar completely
           await NavigationBar.setVisibilityAsync("hidden");
-
-          // 2. set behavior to 'overlay-swipe'
-          // This ensures that even if the user swipes it up, 
-          // it overlays content (doesn't resize app) and hides again automatically.
           await NavigationBar.setBehaviorAsync("overlay-swipe");
-
-          // 3. Make it transparent just in case it momentarily appears
           await NavigationBar.setBackgroundColorAsync("transparent");
         } catch (error) {
           console.error('Android fullscreen configuration error:', error);
@@ -57,10 +65,8 @@ function Navigation() {
       }
     };
 
-    // Apply on mount and theme change
     configureFullscreen();
 
-    // Re-apply when the app returns from background (resume)
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
         configureFullscreen();
@@ -72,20 +78,41 @@ function Navigation() {
     };
   }, [isDark]);
 
+  // Auth Guard Logic
+  if (loading) return <LoadingScreen />;
+
   return (
     <NavigationContainer theme={isDark ? DarkTheme : DefaultTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="Library" component={LibraryScreen} />
-        <Stack.Screen name="Categories" component={CategoriesScreen} />
-        <Stack.Screen name="Downloads" component={DownloadsScreen} />
-        <Stack.Screen name="Settings" component={SettingsScreen} />
-        <Stack.Screen name="Recording" component={RecordingScreen} />
-        <Stack.Screen name="Results" component={ResultsScreen} />
-        <Stack.Screen name="Flashcards" component={FlashcardsScreen} />
-        <Stack.Screen name="Quiz" component={QuizScreen} />
-        <Stack.Screen name="AIChat" component={AIChatScreen} />
-        <Stack.Screen name="Notes" component={NotesScreen} />
+        {!user ? (
+          // 1. Auth Flow
+          <Stack.Screen name="Auth" component={AuthScreen} />
+        ) : !isWhitelisted ? (
+          // 2. Access Restricted Flow
+          <Stack.Screen name="AccessDenied" component={AccessDeniedScreen} />
+        ) : (
+          // 3. Authenticated & Whitelisted App Flow
+          <>
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Library" component={LibraryScreen} />
+            <Stack.Screen name="Categories" component={CategoriesScreen} />
+            <Stack.Screen name="Downloads" component={DownloadsScreen} />
+            <Stack.Screen
+              name="Settings"
+              component={SettingsScreen}
+              options={{
+                animation: 'fade',
+                presentation: 'transparentModal'
+              }}
+            />
+            <Stack.Screen name="Recording" component={RecordingScreen} />
+            <Stack.Screen name="Results" component={ResultsScreen} />
+            <Stack.Screen name="Flashcards" component={FlashcardsScreen} />
+            <Stack.Screen name="Quiz" component={QuizScreen} />
+            <Stack.Screen name="AIChat" component={AIChatScreen} />
+            <Stack.Screen name="Notes" component={NotesScreen} />
+          </>
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );
@@ -111,8 +138,19 @@ export default function App() {
   }
 
   return (
-    <ThemeProvider>
-      <Navigation />
-    </ThemeProvider>
+    <AuthProvider>
+      <ThemeProvider>
+        <NetworkProvider>
+          <StatusBarWrapper />
+          <Navigation />
+          <OfflineDialog />
+        </NetworkProvider>
+      </ThemeProvider>
+    </AuthProvider>
   );
 }
+
+const StatusBarWrapper = () => {
+  const { isDark } = useTheme();
+  return <StatusBar style={isDark ? "light" : "dark"} />;
+};

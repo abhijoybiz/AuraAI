@@ -24,9 +24,12 @@ import { StatusBar } from 'expo-status-bar';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
+import { useNetwork } from '../context/NetworkContext';
 import { SPACING } from '../constants/theme';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Mic, Mic2 } from 'lucide-react-native';
+import { Mic, Mic2, RefreshCw } from 'lucide-react-native';
+import { deleteLectureFromCloud, syncLectureToCloud, syncAllData, syncFiltersToCloud } from '../services/lectureStorage';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -42,10 +45,10 @@ const DEFAULT_FILTERS = [
 
 // Initial mock data
 const INITIAL_DATA = [
-  { id: '1', title: 'Atomic bombshell in call of duty', date: 'Jan 24 2025', duration: '15min', isFavorite: true, filterIds: [] },
-  { id: '2', title: 'Quantum mechanics explained', date: 'Jan 23 2025', duration: '45min', isFavorite: false, filterIds: [] },
-  { id: '3', title: 'React Native Performance Tips', date: 'Jan 22 2025', duration: '12min', isFavorite: false, filterIds: [] },
-  { id: '4', title: 'The history of the internet', date: 'Jan 20 2025', duration: '28min', isFavorite: true, filterIds: [] },
+  { id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479', title: 'Atomic bombshell in call of duty', date: '2025-01-24T10:00:00.000Z', duration: '15min', isFavorite: true, filterIds: [] },
+  { id: '550e8400-e29b-41d4-a716-446655440000', title: 'Quantum mechanics explained', date: '2025-01-23T10:00:00.000Z', duration: '45min', isFavorite: false, filterIds: [] },
+  { id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8', title: 'React Native Performance Tips', date: '2025-01-22T10:00:00.000Z', duration: '12min', isFavorite: false, filterIds: [] },
+  { id: '123e4567-e89b-12d3-a456-426614174000', title: 'The history of the internet', date: '2025-01-20T10:00:00.000Z', duration: '28min', isFavorite: true, filterIds: [] },
 ];
 
 // Available icons for filters (Lucide/Feather icons)
@@ -58,6 +61,20 @@ const AVAILABLE_ICONS = [
 
 export default function HomeScreen({ navigation }) {
   const { colors, isDark } = useTheme();
+  const { isOffline } = useNetwork();
+  const { user } = useAuth();
+
+  // Helper for safe date display
+  const formatDate = (dateString) => {
+    try {
+      if (!dateString) return '';
+      const d = new Date(dateString);
+      if (isNaN(d.getTime())) return dateString; // Fallback to original if bad
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return dateString || '';
+    }
+  };
 
   // State
   const [cards, setCards] = useState([]);
@@ -99,6 +116,11 @@ export default function HomeScreen({ navigation }) {
       saveFilters();
     }
   }, [filters]);
+
+  // Persist cards whenever they change
+  useEffect(() => {
+    saveCards();
+  }, [cards]);
 
   // Animate modals
   useEffect(() => {
@@ -190,8 +212,20 @@ export default function HomeScreen({ navigation }) {
     try {
       const customFilters = filters.filter(f => !f.isDefault);
       await AsyncStorage.setItem(STORAGE_KEYS.FILTERS, JSON.stringify(customFilters));
+      syncFiltersToCloud(filters); // Fire and forget sync
     } catch (error) {
       console.error('Error saving filters:', error);
+    }
+  };
+
+  const handleSync = async () => {
+    Alert.alert('Syncing', 'Syncing your data with the cloud...');
+    try {
+      const result = await syncAllData();
+      await loadData(); // Reload from storage
+      Alert.alert('Success', `Synced ${result.lectures.received} new lectures.`);
+    } catch (e) {
+      Alert.alert('Error', 'Sync failed. Please check your connection.');
     }
   };
 
@@ -221,10 +255,17 @@ export default function HomeScreen({ navigation }) {
   };
 
   // Card actions
-  const toggleFavorite = (cardId) => {
-    setCards(cards.map(card =>
+  const toggleFavorite = async (cardId) => {
+    const updatedCards = cards.map(card =>
       card.id === cardId ? { ...card, isFavorite: !card.isFavorite } : card
-    ));
+    );
+    setCards(updatedCards);
+
+    // Sync to cloud
+    const updatedCard = updatedCards.find(c => c.id === cardId);
+    if (updatedCard) {
+      syncLectureToCloud(updatedCard);
+    }
   };
 
   const deleteCard = (cardId) => {
@@ -236,28 +277,45 @@ export default function HomeScreen({ navigation }) {
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            // Remove locally
             setCards(cards.filter(card => card.id !== cardId));
             setShowCardMenu(false);
+
+            // Sync deletion to cloud
+            try {
+              await deleteLectureFromCloud(cardId);
+            } catch (error) {
+              console.error('Failed to sync deletion to cloud:', error);
+              // We don't block the UI if cloud delete fails, 
+              // but we should probably inform the user if they're offline
+            }
           }
         }
       ]
     );
   };
 
-  const renameCard = () => {
+  const renameCard = async () => {
     if (renameText.trim()) {
-      setCards(cards.map(card =>
+      const updatedCards = cards.map(card =>
         card.id === selectedCard.id ? { ...card, title: renameText.trim() } : card
-      ));
+      );
+      setCards(updatedCards);
+
+      const updatedCard = updatedCards.find(c => c.id === selectedCard.id);
+      if (updatedCard) {
+        syncLectureToCloud(updatedCard);
+      }
+
       setShowRenameModal(false);
       setShowCardMenu(false);
       setRenameText('');
     }
   };
 
-  const assignCardToFilter = (filterId) => {
-    setCards(cards.map(card => {
+  const assignCardToFilter = async (filterId) => {
+    const updatedCards = cards.map(card => {
       if (card.id === selectedCard.id) {
         const filterIds = card.filterIds || [];
         const hasFilter = filterIds.includes(filterId);
@@ -269,7 +327,16 @@ export default function HomeScreen({ navigation }) {
         };
       }
       return card;
-    }));
+    });
+
+    setCards(updatedCards);
+
+    // CRITICAL: Update selectedCard so the modal UI refreshes immediately
+    const updatedCard = updatedCards.find(c => c.id === selectedCard.id);
+    if (updatedCard) {
+      setSelectedCard(updatedCard);
+      syncLectureToCloud(updatedCard);
+    }
   };
 
   // Filter management
@@ -329,11 +396,29 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handleRecord = () => {
+    if (isOffline) {
+      Alert.alert(
+        'Offline Mode',
+        'Recording requires an internet connection for transcription. Please connect to the internet and try again.',
+        [{ text: 'OK' }]
+      );
+      setIsFabExpanded(false);
+      return;
+    }
     setIsFabExpanded(false);
     navigation.navigate('Recording');
   };
 
   const handleUpload = async () => {
+    if (isOffline) {
+      Alert.alert(
+        'Offline Mode',
+        'Uploading audio requires an internet connection for transcription. Please connect to the internet and try again.',
+        [{ text: 'OK' }]
+      );
+      setIsFabExpanded(false);
+      return;
+    }
     try {
       setIsFabExpanded(false);
       const result = await DocumentPicker.getDocumentAsync({
@@ -370,7 +455,7 @@ export default function HomeScreen({ navigation }) {
         navigation.replace('Results', {
           uri: asset.uri,
           duration: formatTime(durationMillis),
-          date: new Date().toLocaleDateString(),
+          date: new Date().toISOString(),
           title: lectureTitle,
           source: 'upload'
         });
@@ -431,7 +516,7 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.cardMeta}>
           <View style={styles.metaRow}>
             <Feather name="calendar" size={14} color={colors.textSecondary} />
-            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{item.date}</Text>
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{formatDate(item.date)}</Text>
           </View>
           <View style={styles.metaRow}>
             <Feather name="activity" size={14} color={colors.textSecondary} />
@@ -471,7 +556,6 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={isDark ? "light" : "dark"} />
 
       {/* Reinvented Polished Header */}
       <View style={styles.header}>
@@ -490,11 +574,13 @@ export default function HomeScreen({ navigation }) {
         </View>
         <TouchableOpacity
           style={[styles.accountPill, { backgroundColor: colors.tint, borderColor: colors.border }]}
-          onPress={() => setShowAccountMenu(true)}
+          onPress={() => navigation.navigate('Settings')}
           activeOpacity={0.7}
         >
           <View style={[styles.avatar, { backgroundColor: isDark ? colors.primary : '#1a1a1a' }]}>
-            <Text style={[styles.avatarText, { color: isDark ? colors.background : '#fff' }]}>O</Text>
+            <Text style={[styles.avatarText, { color: isDark ? colors.background : '#fff' }]}>
+              {user?.user_metadata?.full_name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'}
+            </Text>
           </View>
           <Feather name="chevron-down" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} />
         </TouchableOpacity>
@@ -520,67 +606,82 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       {/* Filters with Progressive Blur */}
-      <View style={[styles.filterContainer, { position: 'relative' }]}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterScroll}
-          style={{ flex: 1 }}
-        >
-          {filters.map((filter) => (
-            <TouchableOpacity
-              key={filter.id}
-              style={[
-                styles.filterChip,
-                {
-                  backgroundColor: activeFilter === filter.id ? colors.primary : colors.tint,
-                  borderColor: activeFilter === filter.id ? colors.primary : colors.border,
-                  shadowColor: colors.shadow
-                }
-              ]}
-              onPress={() => setActiveFilter(filter.id)}
-              onLongPress={() => !filter.isDefault && deleteFilter(filter.id)}
-            >
-              {filter.icon && (
-                <Feather
-                  name={filter.icon}
-                  size={14}
-                  color={activeFilter === filter.id ? colors.card : colors.text}
-                />
-              )}
-              <Text style={[
-                styles.filterText,
-                { color: activeFilter === filter.id ? colors.card : colors.text }
-              ]}>
-                {filter.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-          <TouchableOpacity
-            style={[styles.filterChip, { backgroundColor: colors.tint, width: 40, justifyContent: 'center', paddingHorizontal: 0, borderColor: colors.border }]}
-            onPress={() => setShowNewFilterModal(true)}
+      <View style={[styles.filterContainer, { flexDirection: 'row', alignItems: 'center' }]}>
+        <View style={{ flex: 1, position: 'relative', height: '100%' }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScroll}
+            style={{ flex: 1 }}
           >
-            <Feather name="plus" size={16} color={colors.text} />
-          </TouchableOpacity>
-        </ScrollView>
+            {filters.map((filter) => (
+              <TouchableOpacity
+                key={filter.id}
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: activeFilter === filter.id ? colors.primary : colors.tint,
+                    borderColor: activeFilter === filter.id ? colors.primary : colors.border,
+                    shadowColor: colors.shadow
+                  }
+                ]}
+                onPress={() => setActiveFilter(filter.id)}
+                onLongPress={() => !filter.isDefault && deleteFilter(filter.id)}
+              >
+                {filter.icon && (
+                  <Feather
+                    name={filter.icon}
+                    size={14}
+                    color={activeFilter === filter.id ? colors.card : colors.text}
+                  />
+                )}
+                <Text style={[
+                  styles.filterText,
+                  { color: activeFilter === filter.id ? colors.card : colors.text }
+                ]}>
+                  {filter.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              style={[styles.filterChip, { backgroundColor: colors.tint, width: 40, justifyContent: 'center', paddingHorizontal: 0, borderColor: colors.border }]}
+              onPress={() => setShowNewFilterModal(true)}
+            >
+              <Feather name="plus" size={16} color={colors.text} />
+            </TouchableOpacity>
+          </ScrollView>
 
-        {/* Left Blur */}
-        <LinearGradient
-          colors={[colors.background, 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.leftBlur}
-          pointerEvents="none"
-        />
+          {/* Left Blur - now local to the scroll area */}
+          <LinearGradient
+            colors={[colors.background, 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.leftBlur}
+            pointerEvents="none"
+          />
 
-        {/* Right Blur */}
-        <LinearGradient
-          colors={['transparent', colors.background]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.rightBlur}
-          pointerEvents="none"
-        />
+          {/* Right Blur - now local to the scroll area */}
+          <LinearGradient
+            colors={['transparent', colors.background]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.rightBlur}
+            pointerEvents="none"
+          />
+        </View>
+
+        <TouchableOpacity
+          onPress={handleSync}
+          style={{
+            justifyContent: 'center',
+            paddingHorizontal: 12,
+            height: '100%',
+            borderLeftWidth: 1,
+            borderLeftColor: colors.border,
+            marginLeft: 4
+          }}>
+          <RefreshCw size={18} color={colors.textSecondary} />
+        </TouchableOpacity>
       </View>
 
       {/* Cards List with Progressive Blur */}
@@ -617,16 +718,18 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       {/* FAB Menu */}
-      {isFabExpanded && (
-        <View style={styles.fabMenu}>
-          <TouchableOpacity style={[styles.fabMenuItem, { backgroundColor: colors.primary }]} onPress={handleUpload}>
-            <Text style={{ color: colors.card, fontWeight: '600' }}>Files</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.fabMenuItem, { backgroundColor: colors.primary }]} onPress={handleRecord}>
-            <Text style={{ color: colors.card, fontWeight: '600' }}>Record</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      {
+        isFabExpanded && (
+          <View style={styles.fabMenu}>
+            <TouchableOpacity style={[styles.fabMenuItem, { backgroundColor: colors.primary }]} onPress={handleUpload}>
+              <Text style={{ color: colors.card, fontWeight: '600' }}>Files</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.fabMenuItem, { backgroundColor: colors.primary }]} onPress={handleRecord}>
+              <Text style={{ color: colors.card, fontWeight: '600' }}>Record</Text>
+            </TouchableOpacity>
+          </View>
+        )
+      }
 
       {/* FAB - Animated */}
       <Animated.View
@@ -841,56 +944,62 @@ export default function HomeScreen({ navigation }) {
               </Text>
             </View>
 
-            <ScrollView style={styles.filterAssignList}>
-              {filters.filter(f => !f.isDefault).map(filter => {
-                const isAssigned = selectedCard?.filterIds?.includes(filter.id);
-                return (
-                  <TouchableOpacity
-                    key={filter.id}
-                    style={[
-                      styles.filterAssignItem,
-                      {
-                        backgroundColor: isAssigned ? colors.tint : 'transparent',
-                        borderColor: isAssigned ? colors.primary : 'transparent',
-                        borderWidth: 1
-                      }
-                    ]}
-                    onPress={() => assignCardToFilter(filter.id)}
-                  >
-                    <View style={styles.filterAssignLeft}>
-                      {/* Selection Marker */}
-                      {isAssigned && (
-                        <View style={[styles.selectionMarker, { backgroundColor: colors.primary }]} />
-                      )}
-                      <View style={[styles.filterAssignIconBox, { backgroundColor: colors.tint }]}>
-                        <Feather name={filter.icon} size={16} color={colors.text} />
+            <ScrollView style={styles.filterAssignList} showsVerticalScrollIndicator={false}>
+              {filters.filter(f => !f.isDefault).length > 0 ? (
+                filters.filter(f => !f.isDefault).map(filter => {
+                  const isAssigned = selectedCard?.filterIds?.includes(filter.id);
+                  return (
+                    <TouchableOpacity
+                      key={filter.id}
+                      style={[
+                        styles.filterAssignItem,
+                        {
+                          backgroundColor: isAssigned ? colors.primary + '10' : colors.card,
+                          borderColor: isAssigned ? colors.primary : colors.border,
+                        }
+                      ]}
+                      onPress={() => assignCardToFilter(filter.id)}
+                    >
+                      <View style={styles.filterAssignLeft}>
+                        {/* Selection Marker */}
+                        {isAssigned && (
+                          <View style={[styles.selectionMarker, { backgroundColor: colors.primary }]} />
+                        )}
+                        <View style={[styles.filterAssignIconBox, { backgroundColor: colors.tint }]}>
+                          <Feather name={filter.icon} size={16} color={colors.text} />
+                        </View>
+                        <Text style={[styles.filterAssignText, { color: colors.text }]}>
+                          {filter.name}
+                        </Text>
                       </View>
-                      <Text style={[styles.filterAssignText, { color: colors.text }]}>
-                        {filter.name}
-                      </Text>
-                    </View>
-                    <View style={[
-                      styles.modernCheckbox,
-                      {
-                        backgroundColor: isAssigned ? colors.primary : 'transparent',
-                        borderColor: isAssigned ? colors.primary : colors.border
-                      }
-                    ]}>
-                      {isAssigned && <Feather name="check" size={14} color={colors.card} strokeWidth={3} />}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
+                      <View style={[
+                        styles.modernCheckbox,
+                        {
+                          backgroundColor: isAssigned ? colors.primary : (isDark ? colors.inputBackground : '#F3F4F6'),
+                          borderColor: isAssigned ? colors.primary : colors.border
+                        }
+                      ]}>
+                        {isAssigned && <Feather name="check" size={14} color={isDark ? colors.background : '#FFF'} strokeWidth={3} />}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <View style={styles.noFiltersContainer}>
+                  <Feather name="tag" size={32} color={colors.text + '20'} style={{ marginBottom: 12 }} />
+                  <Text style={[styles.noFiltersText, { color: colors.textSecondary }]}>No user filters created yet.</Text>
+                </View>
+              )}
             </ScrollView>
 
             <TouchableOpacity
-              style={[styles.modernButton, styles.modernButtonPrimary, { backgroundColor: colors.primary, marginTop: 16 }]}
+              style={[styles.modernButton, styles.modernButtonFull, { backgroundColor: colors.primary, marginTop: 16 }]}
               onPress={() => {
                 closeWithAnimation(setShowFilterModal);
                 closeWithAnimation(setShowCardMenu);
               }}
             >
-              <Text style={[styles.modernButtonText, { color: colors.card, fontWeight: '600' }]}>Apply Changes</Text>
+              <Text style={[styles.modernButtonText, { color: colors.card }]}>Done</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -1521,21 +1630,32 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   modernButton: {
-    flex: 1,
-    paddingVertical: 12, // Compact
-    borderRadius: 12,
+    paddingVertical: 14,
+    borderRadius: 14, // Slightly rounder for premium feel
     alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%', // Ensure it spans the width
   },
   modernButtonPrimary: {
+    flex: 1,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 3,
   },
-  modernButtonSecondary: {},
+  modernButtonSecondary: {
+    flex: 1,
+  },
+  // Full width version for single-button modals
+  modernButtonFull: {
+    flex: 0,
+    width: '100%',
+  },
   modernButtonText: {
     fontSize: 16,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: -0.2,
   },
   filterAssignList: {
     maxHeight: 280,
@@ -1548,6 +1668,18 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 12,
     marginBottom: 8,
+    borderWidth: 1.5,
+    // Removed shadows/elevation to fix "inner shadow" artifacts in light mode
+  },
+  noFiltersContainer: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noFiltersText: {
+    fontSize: 15,
+    fontWeight: '500',
+    fontFamily: 'Inter_500Medium',
   },
   filterAssignLeft: {
     flexDirection: 'row',
@@ -1577,12 +1709,17 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   modernCheckbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 7,
+    width: 26,
+    height: 26,
+    borderRadius: 8,
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
   },
   statusBadge: {
     paddingHorizontal: 8,

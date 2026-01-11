@@ -1,38 +1,66 @@
 // app.config.js
-// Expo-compatible configuration file
-// Environment variables are injected at build time via process.env
+// Expo configuration file with environment-based settings
+// 
+// IMPORTANT: For production builds, set these environment variables:
+// - SUPABASE_URL: Your Supabase project URL
+// - SUPABASE_ANON_KEY: Your Supabase anonymous/public key (safe to expose)
+// - APP_ENV: 'development' or 'production'
+//
+// For development (local testing with insecure keys):
+// - DEEPGRAM_API_KEY: Only for dev mode testing
+// - GROQ_API_KEY: Only for dev mode testing
 
-const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8081';
+const APP_ENV = process.env.APP_ENV || 'development';
+const IS_PROD = APP_ENV === 'production';
 
-// Optional debug logs (safe to remove later)
-console.log('Loading app.config.js...');
-console.log('DEEPGRAM_API_KEY:', DEEPGRAM_API_KEY ? '✓ Loaded' : '✗ Missing');
-console.log('GROQ_API_KEY:', GROQ_API_KEY ? '✓ Loaded' : '✗ Missing');
-console.log('API_BASE_URL:', API_BASE_URL);
+// Supabase configuration (required for production)
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+
+// Legacy keys: ONLY load these if we are strictly in development mode
+// If IS_PROD is true, we set these to null so they are NEVER bundled into the APK/IPA
+const DEEPGRAM_API_KEY = IS_PROD ? null : process.env.DEEPGRAM_API_KEY;
+const GROQ_API_KEY = IS_PROD ? null : process.env.GROQ_API_KEY;
+
+// API base URL (for legacy backend if still used)
+const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8000';
+
+// Debug logging
+console.log('========================================');
+console.log('🚀 Memry App Config');
+console.log(`Environment: ${APP_ENV.toUpperCase()}`);
+console.log(`Mode: ${IS_PROD ? '🔒 SECURE (Edge Functions)' : '🛠️ DEV (Local Keys)'}`);
+console.log('----------------------------------------');
+console.log('SUPABASE_URL:', SUPABASE_URL ? '✅' : '❌');
+console.log('SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? '✅' : '❌');
+console.log('LOCAL_KEYS_IN_BUNDLE:', IS_PROD ? '🚫 HIDDEN' : '⚠️ INJECTED');
+console.log('========================================');
+
+// App versioning
+const APP_VERSION = '1.0.0';
+const BUILD_NUMBER = process.env.BUILD_NUMBER || '1';
 
 module.exports = {
   expo: {
     name: "Memry",
     slug: "memry",
-    version: "1.0.0",
+    version: APP_VERSION,
     orientation: "portrait",
 
     icon: "./assets/logo.png",
 
-    userInterfaceStyle: "light",
+    userInterfaceStyle: "automatic",
 
-    "plugins": [
+    plugins: [
       [
         "expo-navigation-bar",
         {
-          "backgroundColor": "#0f172a",
-          "barStyle": "light",
-          "borderColor": "#1f2937",
-          "visibility": "visible",
-          "behavior": "inset-swipe",
-          "position": "relative"
+          backgroundColor: "#0f172a",
+          barStyle: "light",
+          borderColor: "#1f2937",
+          visibility: "visible",
+          behavior: "inset-swipe",
+          position: "relative"
         }
       ]
     ],
@@ -40,7 +68,7 @@ module.exports = {
     splash: {
       image: "./assets/logo.png",
       resizeMode: "contain",
-      backgroundColor: "#ffffff"
+      backgroundColor: "#0f172a"
     },
 
     assetBundlePatterns: [
@@ -48,29 +76,68 @@ module.exports = {
     ],
 
     ios: {
-      supportsTablet: true
+      supportsTablet: true,
+      bundleIdentifier: "com.memry.app",
+      buildNumber: BUILD_NUMBER,
+      infoPlist: {
+        NSMicrophoneUsageDescription: "Memry needs access to your microphone to record lectures for transcription.",
+        UIBackgroundModes: ["audio"]
+      }
     },
 
     android: {
       adaptiveIcon: {
         foregroundImage: "./assets/logo.png",
-        backgroundColor: "#ffffff"
+        backgroundColor: "#0f172a"
       },
       navigationBar: {
         visible: false,
         backgroundColor: "#00000000",
       },
-      package: "com.anonymous.expoapp"
+      softwareKeyboardLayoutMode: "adjustResize",
+      package: "com.memry.app",
+      versionCode: parseInt(BUILD_NUMBER, 10),
+      permissions: [
+        "RECORD_AUDIO",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ]
     },
 
     web: {
       favicon: "./assets/logo.png"
     },
 
+    // Extra configuration passed to the app
     extra: {
+      // App metadata
+      appEnv: APP_ENV,
+      isProduction: IS_PROD,
+
+      // Supabase (REQUIRED for production)
+      supabaseUrl: SUPABASE_URL,
+      supabaseAnonKey: SUPABASE_ANON_KEY,
+
+      // Legacy API keys (DEV ONLY - removed in production builds)
       deepgramApiKey: DEEPGRAM_API_KEY,
       groqApiKey: GROQ_API_KEY,
-      apiBaseUrl: API_BASE_URL
-    }
+
+      // Legacy backend URL
+      apiBaseUrl: API_BASE_URL,
+
+      // EAS Build configuration
+      eas: {
+        projectId: process.env.EAS_PROJECT_ID || "YOUR_EAS_PROJECT_ID"
+      }
+    },
+
+    // Update configuration
+    updates: {
+      fallbackToCacheTimeout: 0,
+      url: IS_PROD ? "https://u.expo.dev/YOUR_EAS_PROJECT_ID" : undefined
+    },
+
+    // Owner for EAS
+    owner: process.env.EXPO_OWNER || "your-expo-username"
   }
 };

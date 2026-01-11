@@ -11,11 +11,13 @@ import {
     ActivityIndicator,
     Animated,
     Alert,
-    Keyboard
+    Keyboard,
+    KeyboardAvoidingView
 } from 'react-native';
 import { ChevronLeft, Send, Sparkles, Layers, Pencil, BookOpenText, Route, MessageSquare, ArrowUp } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
+import { useNetwork } from '../context/NetworkContext';
 import { aiService } from '../services/ai.js';
 
 const ActionCard = ({ type, onPress }) => {
@@ -150,6 +152,7 @@ const MessageItem = ({ item, onNavigate }) => {
 
 export default function AIChatScreen({ route, navigation }) {
     const { colors, isDark } = useTheme();
+    const { isOffline } = useNetwork();
     const { lectureId, initialMessage, transcript } = (route && route.params) || {};
 
     const [messages, setMessages] = useState([]);
@@ -162,32 +165,6 @@ export default function AIChatScreen({ route, navigation }) {
 
     useEffect(() => {
         if (lectureId) loadChat();
-
-        const showSubscription = Keyboard.addListener(
-            Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-            (e) => {
-                Animated.timing(keyboardHeight, {
-                    toValue: e.endCoordinates.height,
-                    duration: Platform.OS === 'ios' ? 250 : 100,
-                    useNativeDriver: false,
-                }).start();
-            }
-        );
-        const hideSubscription = Keyboard.addListener(
-            Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-            () => {
-                Animated.timing(keyboardHeight, {
-                    toValue: 0,
-                    duration: Platform.OS === 'ios' ? 250 : 100,
-                    useNativeDriver: false,
-                }).start();
-            }
-        );
-
-        return () => {
-            showSubscription.remove();
-            hideSubscription.remove();
-        };
     }, [lectureId]);
 
     const loadChat = async () => {
@@ -222,6 +199,11 @@ export default function AIChatScreen({ route, navigation }) {
     const handleSend = async (text = input, currentMessages = messages) => {
         const cleanText = text.trim();
         if (!cleanText) return;
+
+        if (isOffline) {
+            Alert.alert("Offline Mode", "Internet connection is required to chat with Memry.");
+            return;
+        }
 
         // Proactive keyword detection in user input
         let enrichedText = cleanText;
@@ -312,26 +294,29 @@ export default function AIChatScreen({ route, navigation }) {
                 <View style={{ width: 44 }} />
             </View>
 
-            <View style={{ flex: 1 }}>
-                <FlatList
-                    ref={flatListRef}
-                    data={messages}
-                    keyExtractor={(item, index) => index.toString()}
-                    renderItem={({ item }) => <MessageItem item={item} onNavigate={handleNavigate} />}
-                    contentContainerStyle={styles.chatList}
-                    onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-                    onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-                    style={{ flex: 1 }}
-                />
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={{ flex: 1 }}
+            >
+                <View style={{ flex: 1 }}>
+                    <FlatList
+                        ref={flatListRef}
+                        data={messages}
+                        keyExtractor={(item, index) => index.toString()}
+                        renderItem={({ item }) => <MessageItem item={item} onNavigate={handleNavigate} />}
+                        contentContainerStyle={styles.chatList}
+                        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+                        onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+                        style={{ flex: 1 }}
+                    />
 
-                {loading && (
-                    <View style={styles.loadingWrapper}>
-                        <ActivityIndicator color={colors.primary} size="small" />
-                        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Memry is thinking...</Text>
-                    </View>
-                )}
+                    {loading && (
+                        <View style={styles.loadingWrapper}>
+                            <ActivityIndicator color={colors.primary} size="small" />
+                            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Memry is thinking...</Text>
+                        </View>
+                    )}
 
-                <Animated.View style={{ marginBottom: keyboardHeight }}>
                     <View style={[styles.inputContainer, { borderTopColor: colors.border, backgroundColor: colors.background }]}>
                         <View style={[styles.inputRow]}>
                             <View style={[styles.textInputWrapper, { backgroundColor: isDark ? colors.tint : '#F3F4F6' }]}>
@@ -357,8 +342,8 @@ export default function AIChatScreen({ route, navigation }) {
                             </TouchableOpacity>
                         </View>
                     </View>
-                </Animated.View>
-            </View>
+                </View>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
@@ -381,11 +366,11 @@ const styles = StyleSheet.create({
         borderRadius: 22,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: "#000",
+        shadowColor: "#000000ff",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
-        elevation: 3,
+        elevation: 0,
     },
     headerInfo: {
         flex: 1,

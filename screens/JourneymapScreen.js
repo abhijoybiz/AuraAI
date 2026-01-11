@@ -16,6 +16,7 @@ import { WebView } from 'react-native-webview';
 import { ChevronLeft, RefreshCw, Save, CloudOff, Cloud, Loader2, Sparkles, Route } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
+import { useNetwork } from '../context/NetworkContext';
 import { API_BASE_URL } from '../utils/api';
 
 const { width } = Dimensions.get('window');
@@ -31,6 +32,7 @@ const { width } = Dimensions.get('window');
  */
 export default function JourneymapScreen({ route, navigation }) {
   const { colors, isDark } = useTheme();
+  const { isOffline } = useNetwork();
   const { transcript, id: lectureId } = route.params || {};
 
   // Refs
@@ -170,6 +172,15 @@ export default function JourneymapScreen({ route, navigation }) {
    * Generate journey map from transcription
    */
   const generateJourneyMap = async () => {
+    if (isOffline) {
+      Alert.alert(
+        'Offline Mode',
+        'Generating a journey map requires an internet connection. Please connect and try again.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     if (!transcript || transcript.trim().length === 0) {
       setStatus('error');
       setErrorMessage('No transcript available to generate journey map.');
@@ -351,7 +362,10 @@ export default function JourneymapScreen({ route, navigation }) {
    * Sync to backend
    */
   const syncToBackend = async (snapshot) => {
-    if (!API_BASE_URL) return;
+    if (!API_BASE_URL || isOffline) {
+      if (isOffline) setSyncStatus('error');
+      return;
+    }
 
     try {
       const response = await fetch(`${API_BASE_URL}/whiteboard/save`, {

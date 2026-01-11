@@ -36,6 +36,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../context/ThemeContext';
+import { useNetwork } from '../context/NetworkContext';
 import { aiService } from '../services/ai.js';
 
 /**
@@ -141,6 +142,7 @@ const ConceptualInfoBar = ({ colors }) => (
 
 export default function NotesScreen({ route, navigation }) {
     const { colors, isDark } = useTheme();
+    const { isOffline } = useNetwork();
     const { transcript, id } = route.params || {};
 
     const [title, setTitle] = useState('Untitled Note');
@@ -182,7 +184,12 @@ export default function NotesScreen({ route, navigation }) {
                     if (card.notes && card.notes.length > 0) {
                         setBlocks(card.notes);
                     } else if (transcript) {
-                        handleGenerate(existingTitle);
+                        // Only auto-generate if online
+                        if (!isOffline) {
+                            handleGenerate(existingTitle);
+                        } else {
+                            setBlocks([{ type: 'paragraph', content: 'You are offline. Connect to generate AI notes for this lecture.' }]);
+                        }
                     } else {
                         // Empty state: add one block
                         setBlocks([{ type: 'paragraph', content: '' }]);
@@ -195,6 +202,11 @@ export default function NotesScreen({ route, navigation }) {
     };
 
     const handleGenerate = async (forcedTitle) => {
+        if (isOffline) {
+            Alert.alert("Offline Mode", "Note generation requires an internet connection.");
+            return;
+        }
+
         if (!transcript || transcript.trim().length === 0) {
             Alert.alert("Missing Content", "No transcript found for this lecture. Please wait for transcription to complete.");
             return;
@@ -275,6 +287,11 @@ export default function NotesScreen({ route, navigation }) {
 
     const handleAiModify = async () => {
         if (!aiPrompt.trim()) return;
+
+        if (isOffline) {
+            Alert.alert("Offline Mode", "AI modification requires an internet connection.");
+            return;
+        }
 
         setIsModifying(true);
         try {

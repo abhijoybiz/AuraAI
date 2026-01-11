@@ -13,8 +13,10 @@ import {
 import { ChevronLeft, Pencil, Plus, Minus, Check, X, RotateCcw, ChevronRight, Sparkles } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
+import { useNetwork } from '../context/NetworkContext';
 import { aiService } from '../services/ai.js';
 import { useFocusEffect } from '@react-navigation/native';
+import { Alert } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -71,6 +73,7 @@ const QuizOption = ({ option, isSelected, isCorrect, showFeedback, onPress, disa
 
 export default function QuizScreen({ route, navigation }) {
     const { colors, isDark } = useTheme();
+    const { isOffline } = useNetwork();
     const { transcript } = route.params || {};
 
     const [count, setCount] = useState(5);
@@ -116,6 +119,11 @@ export default function QuizScreen({ route, navigation }) {
     );
 
     const handleGenerate = async () => {
+        if (isOffline) {
+            Alert.alert("Offline Mode", "Quiz generation requires an internet connection. Please connect and try again.");
+            return;
+        }
+
         if (!transcript || transcript.trim().length === 0) {
             Alert.alert("Missing Content", "No transcript found for this lecture. Please wait for transcription to complete.");
             return;
