@@ -18,7 +18,7 @@ const AccessDeniedScreen = () => {
     const { user, signOut } = useAuth();
 
     const handleContactSupport = () => {
-        Linking.openURL('mailto:support@intervwr.com?subject=Whitelist Request&body=Identity Verification Request\n\nUser ID: ' + user?.id + '\nEmail: ' + user?.email + '\n\nRequesting access to Memry private beta.');
+        Linking.openURL('mailto:abhijoybiz@gmail.com?subject=Whitelist Request&body=Identity Verification Request\n\nUser ID: ' + user?.id + '\nEmail: ' + user?.email + '\n\nRequesting access to Memry private beta.');
     };
 
     return (

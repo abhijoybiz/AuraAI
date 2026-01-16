@@ -80,6 +80,7 @@ export const aiService = {
 - Use > blockquotes for important takeaways or quotes
 - Use --- for horizontal rules between major topics
 - Use inline \`code\` for technical terms or formulas
+- Use LaTeX for mathematical formulas: \\( ... \\) for inline and \\[ ... \\] for blocks (e.g., \\( E=mc^2 \\)).
 - Use tables for comparisons when applicable
 - Use *italics* for emphasis
 
@@ -227,8 +228,14 @@ ${text}`
                                     - Use "bullet" for unstructured lists of points or facts.
                                     - Use "numbered" for sequences, hierarchies, or chronological steps.
                                     - Use "paragraph" for narrative explanations and context.
+                                    - IMPORTANT: For ALL mathematical formulas, equations or symbols, you MUST use LaTeX notation:
+                                      - Use \( ... \) for inline math
+                                      - Use \[ ... \] for block/standalone equations
                                     IMPORTANT: Within the "content" string, you SHOULD use **bold** for key concepts and *italics* for emphasis or definitions.
-                                    Ensure the notes are logically organized, professional, and academically rigorous. Return ONLY the JSON array starting with [ and ending with ].\n\nTranscript:\n${text}`
+                                    Ensure the notes are logically organized, professional, and academically rigorous. Return ONLY the JSON array starting with [ and ending with ].
+
+Transcript:
+${text}`
                         }
                     ],
                 }),
@@ -342,6 +349,7 @@ ${text}`
                 2. Be concise, clear, and educational.
                 3. Use rich Markdown formatting: **bold** for key concepts, \`code\` for technical terms, and bullet points for lists.
                 4. If the user asks for materials (flashcards, quizzes, notes, or journey maps), YOU MUST include the specific trigger tag at the end of your message.
+                5. For ANY mathematical formulas or symbols, ALWAYS use LaTeX: \( ... \) for inline and \[ ... \] for blocks.
                 
                 TRIGGER TAGS:
                 - For Flashcards: [ACTION:FLASHCARDS]

@@ -12,9 +12,16 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import * as KeepAwake from 'expo-keep-awake';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { SPACING } from '../constants/theme';
+import * as Notifications from 'expo-notifications';
+import {
+  configureBackgroundAudio,
+  showRecordingNotification,
+  dismissRecordingNotification
+} from '../services/backgroundRecording';
 
 const { width } = Dimensions.get('window');
 
@@ -64,14 +71,31 @@ export default function RecordingScreen({ navigation }) {
   // Pulse animation for the recording indicator
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Cleanup on unmount
+  // Cleanup on unmount - includes background recording resources
   useEffect(() => {
     return () => {
       if (recording) {
         recording.stopAndUnloadAsync().catch(() => { });
+        KeepAwake.deactivateKeepAwake('recording');
+        dismissRecordingNotification().catch(() => { });
       }
     };
   }, [recording]);
+
+  // Notification Listener Logic
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const actionIdentifier = response.actionIdentifier;
+
+      if (actionIdentifier === 'PAUSE_ACTION' || actionIdentifier === 'RESUME_ACTION') {
+        handlePauseResume();
+      } else if (actionIdentifier === 'STOP_ACTION') {
+        handleStop();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [recording, isPaused]); // Re-bind when state changes to ensure correct handlePauseResume reference
 
   // Pulse animation effect
   useEffect(() => {
@@ -87,47 +111,94 @@ export default function RecordingScreen({ navigation }) {
     }
   }, [recording, isPaused]);
 
-  // Keep original recording functions but use them in the new UI
+  // Handle recording with background support
   async function handleRecordPress() {
     if (recording) return;
 
     setIsPreparing(true);
     try {
-      const permission = await Audio.requestPermissionsAsync();
-      if (permission.status !== 'granted') {
+      console.log('[DEBUG] Requesting required permissions...');
+
+      // 1. Request Microphone Permission
+      const micPermission = await Audio.requestPermissionsAsync();
+      if (micPermission.status !== 'granted') {
         Alert.alert('Permission Denied', 'Microphone access is required.');
         setIsPreparing(false);
         return;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
 
+
+      console.log('[DEBUG] Permissions granted. Configuring audio session...');
+
+      // 3. Configure audio mode (iOS Category: PlayAndRecord, Android: DoNotMix)
+      await configureBackgroundAudio();
+
+      // 4. Force foreground state and keep screen awake
+      await KeepAwake.activateKeepAwakeAsync('recording');
+
+
+
+      // Small delay to ensure the OS has applied the audio mode and the notification is registered
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      console.log('[DEBUG] Initializing recorder...');
+
+      // 6. Create and Start Recording
       const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        {
+          ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+          android: {
+            ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android,
+            audioEncoder: 3, // AAC
+            outputFormat: 2, // MPEG_4
+          },
+          ios: {
+            ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
+            audioQuality: 127,
+            bitRate: 128000,
+            sampleRate: 44100,
+            numberOfChannels: 2,
+          }
+        },
         (status) => {
           setDurationMillis(status.durationMillis);
           if (status.isRecording && status.metering !== undefined) {
-            // Normalize dB (-160 to 0) to 0-1 range approx for visualization
             const db = status.metering;
             const normalized = Math.min(Math.max((db + 60) / 60, 0), 1);
-
-            setAudioMetering(prev => {
-              const newArr = [...prev.slice(1), normalized];
-              return newArr;
-            });
+            setAudioMetering(prev => [...prev.slice(1), normalized]);
           }
         },
         100
       );
 
+      console.log('[DEBUG] Recording started successfully');
       setRecording(newRecording);
       setIsPaused(false);
+
+      // Show persistent notification (Non-blocking)
+      // We don't await this to ensure recording feels instant
+      showRecordingNotification().catch(err => console.log('Notification failed silently:', err));
     } catch (err) {
-      console.error('Failed to start recording', err);
-      Alert.alert('Error', 'Could not start recording.');
+      console.error('[DEBUG] FATAL: Failed to start recording:', err);
+
+      // Check for specific common errors
+      let errorMessage = err.message || 'Unknown error';
+      if (errorMessage.includes('not permitted')) {
+        errorMessage = 'Microphone permission was denied by the system.';
+      } else if (errorMessage.includes('busy') || errorMessage.includes('resource exhausted')) {
+        errorMessage = 'The microphone is already in use by another app or process.';
+      }
+
+      Alert.alert('Error', `Could not start recording: ${errorMessage}`);
+
+      // Comprehensive cleanup on error
+      KeepAwake.deactivateKeepAwake('recording');
+      await dismissRecordingNotification().catch(() => { });
+      if (recording) {
+        await recording.stopAndUnloadAsync().catch(() => { });
+        setRecording(null);
+      }
     } finally {
       setIsPreparing(false);
     }
@@ -143,9 +214,11 @@ export default function RecordingScreen({ navigation }) {
           await recording.startAsync();
         }
         setIsPaused(false);
+        await showRecordingNotification(false); // Update notification to "Recording"
       } else {
         await recording.pauseAsync();
         setIsPaused(true);
+        await showRecordingNotification(true); // Update notification to "Paused"
       }
     } catch (err) {
       console.error('Failed to pause/resume recording', err);
@@ -155,6 +228,10 @@ export default function RecordingScreen({ navigation }) {
   async function handleStop() {
     if (!recording) return;
     try {
+      // Clean up background recording resources first
+      KeepAwake.deactivateKeepAwake('recording');
+      await dismissRecordingNotification().catch(() => { });
+
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       const finalDuration = durationMillis;

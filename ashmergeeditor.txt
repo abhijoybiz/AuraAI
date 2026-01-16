@@ -48,10 +48,10 @@ module.exports = {
     slug: "memry",
     version: "1.0.0",
     orientation: "portrait",
-    icon: "./assets/logo.png",
+    icon: "./assets/logo_black.png",
     userInterfaceStyle: "light",
     splash: {
-      image: "./assets/logo.png",
+      image: "./assets/logo_black.png",
       resizeMode: "contain",
       backgroundColor: "#ffffff"
     },
@@ -63,13 +63,13 @@ module.exports = {
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: "./assets/logo.png",
+        foregroundImage: "./assets/logo_black.png",
         backgroundColor: "#ffffff"
       },
       package: "com.anonymous.expoapp"
     },
     web: {
-      favicon: "./assets/logo.png"
+      favicon: "./assets/logo_black.png"
     },
     extra: {
       deepgramApiKey: DEEPGRAM_API_KEY,

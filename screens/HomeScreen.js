@@ -562,7 +562,7 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.brandMark}>
           <View style={[styles.logoPulse, { backgroundColor: colors.tint }]}>
             <Image
-              source={isDark ? require('../assets/logo_white.png') : require('../assets/logo.png')}
+              source={isDark ? require('../assets/logo_white.png') : require('../assets/logo_black.png')}
               style={styles.headerLogo}
               resizeMode="contain"
             />

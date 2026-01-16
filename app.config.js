@@ -55,6 +55,8 @@ module.exports = {
     userInterfaceStyle: "automatic",
 
     plugins: [
+      // Custom plugin for Android foreground microphone service (required for Android 12+ production builds)
+      "./plugins/withForegroundMicrophone",
       [
         "expo-navigation-bar",
         {
@@ -62,6 +64,19 @@ module.exports = {
           barStyle: "dark",
           visibility: "visible",
           behavior: "inset-touch"
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for recording lectures."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#0f172a"
         }
       ]
     ],
@@ -82,7 +97,7 @@ module.exports = {
       buildNumber: BUILD_NUMBER,
       infoPlist: {
         NSMicrophoneUsageDescription: "Memry needs access to your microphone to record lectures for transcription.",
-        UIBackgroundModes: ["audio"]
+        UIBackgroundModes: ["audio", "fetch"]
       }
     },
 
@@ -102,7 +117,11 @@ module.exports = {
       permissions: [
         "RECORD_AUDIO",
         "INTERNET",
-        "ACCESS_NETWORK_STATE"
+        "ACCESS_NETWORK_STATE",
+        "FOREGROUND_SERVICE_MICROPHONE",
+        "FOREGROUND_SERVICE",
+        "WAKE_LOCK",
+        "POST_NOTIFICATIONS"
       ]
     },
 

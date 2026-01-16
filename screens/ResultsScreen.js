@@ -30,6 +30,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import aiService from '../services/ai';
 import { syncLectureToCloud } from '../services/lectureStorage';
 import { generateUUID } from '../lib/supabase';
+import MarkdownMathRenderer from '../components/MarkdownMathRenderer';
 
 const { width } = Dimensions.get('window');
 
@@ -749,111 +750,6 @@ export default function ResultsScreen({ route, navigation }) {
         return 'pending';
     };
 
-    const MarkdownRenderer = ({ content }) => {
-        if (!content) return null;
-
-        const lines = content.split('\n');
-        let inList = false;
-
-        return (
-            <View>
-                {lines.map((line, index) => {
-                    const trimmedLine = line.trim();
-
-                    if (trimmedLine === '---') {
-                        return <View key={index} style={styles.mdHr} />;
-                    }
-
-                    if (trimmedLine.startsWith('> ')) {
-                        return (
-                            <View key={index} style={styles.mdQuote}>
-                                <Text style={[styles.mdText, { color: colors.textSecondary }]}>
-                                    {trimmedLine.replace('> ', '')}
-                                </Text>
-                            </View>
-                        );
-                    }
-
-                    if (trimmedLine.startsWith('### ')) {
-                        return <Text key={index} style={[styles.mdH3, { color: colors.text }]}>{trimmedLine.replace('### ', '')}</Text>;
-                    }
-                    if (trimmedLine.startsWith('## ')) {
-                        return <Text key={index} style={[styles.mdH2, { color: colors.text }]}>{trimmedLine.replace('## ', '')}</Text>;
-                    }
-                    if (trimmedLine.startsWith('# ')) {
-                        return <Text key={index} style={[styles.mdH1, { color: colors.text }]}>{trimmedLine.replace('# ', '')}</Text>;
-                    }
-
-                    // Numbered Lists
-                    const numberedMatch = trimmedLine.match(/^(\d+)\.\s+(.*)/);
-                    if (numberedMatch) {
-                        return (
-                            <View key={index} style={styles.mdNumberedRow}>
-                                <Text style={[styles.mdNumberedLabel, { color: colors.text }]}>{numberedMatch[1]}.</Text>
-                                <Text style={[styles.mdText, { color: colors.textSecondary, flex: 1 }]}>
-                                    {numberedMatch[2]}
-                                </Text>
-                            </View>
-                        );
-                    }
-
-                    if (trimmedLine.startsWith('- ') || trimmedLine.startsWith('* ')) {
-                        return (
-                            <View key={index} style={styles.mdBulletRow}>
-                                <Text style={[styles.mdBullet, { color: colors.text }]}>•</Text>
-                                <Text style={[styles.mdText, { color: colors.textSecondary, flex: 1 }]}>
-                                    {trimmedLine.substring(2)}
-                                </Text>
-                            </View>
-                        );
-                    }
-
-                    if (trimmedLine.includes('|') && trimmedLine.split('|').length > 2) {
-                        const cells = trimmedLine.split('|').filter(c => c.trim().length > 0);
-                        if (trimmedLine.includes('---')) return null; // Skip table separator lines
-                        return (
-                            <View key={index} style={[styles.mdTableRow, { borderBottomColor: colors.border }]}>
-                                {cells.map((cell, cIdx) => (
-                                    <View key={cIdx} style={[styles.mdTableCell, { borderColor: colors.border }]}>
-                                        <Text style={[styles.mdText, {
-                                            color: colors.text,
-                                            fontWeight: trimmedLine.includes('**') ? '700' : '400'
-                                        }]}>
-                                            {cell.trim().replace(/\*\*/g, '')}
-                                        </Text>
-                                    </View>
-                                ))}
-                            </View>
-                        );
-                    }
-
-                    // Text parsing for Bold, Italic, and Inline Code
-                    const parts = trimmedLine.split(/(\*\*.*?\*\*|\*.*?\*|`.*?`)/g);
-                    return (
-                        <Text key={index} style={[styles.mdText, { color: colors.textSecondary }]}>
-                            {parts.map((part, pIdx) => {
-                                if (part.startsWith('**') && part.endsWith('**')) {
-                                    return <Text key={pIdx} style={{ fontWeight: '700', color: colors.text }}>{part.slice(2, -2)}</Text>;
-                                }
-                                if (part.startsWith('*') && part.endsWith('*')) {
-                                    return <Text key={pIdx} style={{ fontStyle: 'italic' }}>{part.slice(1, -1)}</Text>;
-                                }
-                                if (part.startsWith('`') && part.endsWith('`')) {
-                                    return (
-                                        <View key={pIdx} style={[styles.mdCodeInline, { backgroundColor: colors.tint }]}>
-                                            <Text style={styles.mdCodeText}>{part.slice(1, -1)}</Text>
-                                        </View>
-                                    );
-                                }
-                                return part;
-                            })}
-                        </Text>
-                    );
-                })}
-            </View>
-        );
-    };
-
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -1013,7 +909,7 @@ export default function ResultsScreen({ route, navigation }) {
                                                         <Maximize2 size={18} color={colors.textSecondary} />
                                                     </TouchableOpacity>
                                                 </View>
-                                                <MarkdownRenderer content={summary} />
+                                                <MarkdownMathRenderer content={summary} />
                                             </>
                                         ) : isGeneratingSummary ? (
                                             <View style={{ alignItems: 'center', paddingVertical: 40 }}>
@@ -1165,7 +1061,7 @@ export default function ResultsScreen({ route, navigation }) {
                         showsVerticalScrollIndicator={false}
                         contentContainerStyle={styles.modalScrollContent}
                     >
-                        <MarkdownRenderer content={summary} />
+                        <MarkdownMathRenderer content={summary} />
                     </ScrollView>
                 </SafeAreaView>
             </Modal>

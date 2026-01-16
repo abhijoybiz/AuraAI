@@ -19,6 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useNetwork } from '../context/NetworkContext';
 import { aiService } from '../services/ai.js';
+import MarkdownMathRenderer from '../components/MarkdownMathRenderer';
 
 const ActionCard = ({ type, onPress }) => {
     const { colors, isDark } = useTheme();
@@ -89,9 +90,11 @@ const MessageItem = ({ item, onNavigate }) => {
                 const textBefore = item.content.substring(lastIndex, match.index);
                 if (textBefore.trim()) {
                     result.push(
-                        <Text key={`text-${index}`} style={[styles.messageText, { color: isUser ? '#FFF' : colors.text, marginBottom: 8 }]}>
-                            {textBefore.trim()}
-                        </Text>
+                        <MarkdownMathRenderer
+                            key={`text-${index}`}
+                            content={textBefore.trim()}
+                            style={[styles.messageText, { color: isUser ? '#FFF' : colors.text, marginBottom: 8 }]}
+                        />
                     );
                 }
 
@@ -112,9 +115,11 @@ const MessageItem = ({ item, onNavigate }) => {
             const remainingText = item.content.substring(lastIndex);
             if (remainingText.trim()) {
                 result.push(
-                    <Text key="text-final" style={[styles.messageText, { color: isUser ? (isDark ? colors.background : "#FFF") : colors.text, marginTop: 8 }]}>
-                        {remainingText.trim()}
-                    </Text>
+                    <MarkdownMathRenderer
+                        key="text-final"
+                        content={remainingText.trim()}
+                        style={[styles.messageText, { color: isUser ? (isDark ? colors.background : "#FFF") : colors.text, marginTop: 8 }]}
+                    />
                 );
             }
 
@@ -122,9 +127,10 @@ const MessageItem = ({ item, onNavigate }) => {
         }
 
         return (
-            <Text style={[styles.messageText, { color: isUser ? (isDark ? colors.background : "#FFF") : colors.text }]}>
-                {item.content}
-            </Text>
+            <MarkdownMathRenderer
+                content={item.content}
+                style={[styles.messageText, { color: isUser ? (isDark ? colors.background : "#FFF") : colors.text }]}
+            />
         );
     };
 

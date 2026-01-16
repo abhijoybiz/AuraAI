@@ -38,6 +38,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../context/ThemeContext';
 import { useNetwork } from '../context/NetworkContext';
 import { aiService } from '../services/ai.js';
+import MarkdownMathRenderer, { MathText } from '../components/MarkdownMathRenderer';
 
 /**
  * NotesScreen - Premium Notion-like editor with AI slash commands and PDF export.
@@ -45,23 +46,6 @@ import { aiService } from '../services/ai.js';
 
 const { width, height } = Dimensions.get('window');
 
-const MarkdownText = ({ text, style, isDark }) => {
-    if (!text) return null;
-    const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
-    return (
-        <Text style={style}>
-            {parts.map((part, i) => {
-                if (part.startsWith('**') && part.endsWith('**')) {
-                    return <Text key={i} style={{ fontWeight: '800' }}>{part.slice(2, -2)}</Text>;
-                }
-                if (part.startsWith('*') && part.endsWith('*')) {
-                    return <Text key={i} style={{ fontStyle: 'italic' }}>{part.slice(1, -1)}</Text>;
-                }
-                return part;
-            })}
-        </Text>
-    );
-};
 
 const NoteBlock = ({ block, index, onUpdate, isEditMode, isDark, colors, onSlashCommand }) => {
     const [content, setContent] = useState(block.content);
@@ -120,10 +104,10 @@ const NoteBlock = ({ block, index, onUpdate, isEditMode, isDark, colors, onSlash
                         style={[getBlockStyle(), styles.editingInput, { backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }]}
                     />
                 ) : (
-                    <MarkdownText
-                        text={block.content}
+                    <MarkdownMathRenderer
+                        content={block.content}
                         style={getBlockStyle()}
-                        isDark={isDark}
+                        inline={true}
                     />
                 )}
             </View>

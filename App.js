@@ -19,6 +19,9 @@ import {
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 
+// services
+import { setupNotificationCategories } from './services/backgroundRecording';
+
 // Screen Imports
 import HomeScreen from './screens/HomeScreen';
 import ResultsScreen from './screens/ResultsScreen';
@@ -67,11 +70,14 @@ const LoadingScreen = () => (
   </View>
 );
 
+//------------------this is the updated function for offline mode--------------------
+
 function Navigation() {
   const { isDark, colors } = useTheme();
-  const { user, loading, isWhitelisted } = useAuth();
+  const { user, loading, isWhitelisted, isOfflineMode } = useAuth();
 
   useEffect(() => {
+    setupNotificationCategories();
     configureAudio();
     const configureNavigationBar = async () => {
       if (Platform.OS === 'android') {
@@ -147,6 +153,10 @@ function Navigation() {
     </NavigationContainer>
   );
 }
+
+
+
+// --------------------------------------------------------
 
 export default function App() {
   const [fontsLoaded] = useFonts({
