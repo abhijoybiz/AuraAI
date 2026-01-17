@@ -13,10 +13,10 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as KeepAwake from 'expo-keep-awake';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { SPACING } from '../constants/theme';
 import * as Notifications from 'expo-notifications';
-import { fetchLecturesFromCloud } from '../services/lectureStorage';
 import {
   configureBackgroundAudio,
   showRecordingNotification,
@@ -239,13 +239,14 @@ export default function RecordingScreen({ navigation }) {
       setIsPaused(false);
       setAudioMetering(Array(35).fill(0));
 
-      // Dynamic Title Generation from Cloud
+      // Dynamic Title Generation
       let lectureTitle = 'New Lecture';
       try {
-        const cards = await fetchLecturesFromCloud();
+        const storedCards = await AsyncStorage.getItem('@memry_cards');
+        const cards = storedCards ? JSON.parse(storedCards) : [];
         lectureTitle = `Lecture ${cards.length + 1}`;
       } catch (e) {
-        console.error('Error getting card count from cloud', e);
+        console.error('Error getting card count', e);
       }
 
       navigation.replace('Results', {

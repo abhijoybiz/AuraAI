@@ -1,11 +1,11 @@
 import React, { createContext, useState, useContext, useEffect } from "react";
 import { useColorScheme } from "react-native";
-import { fetchUserPreferences, updateUserPreference } from "../services/lectureStorage";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { COLORS } from "../constants/theme";
 
 const ThemeContext = createContext();
 
-// Theme preference now managed in Supabase metadata
+const THEME_STORAGE_KEY = "@user_theme_preference";
 
 export const ThemeProvider = ({ children }) => {
     const systemScheme = useColorScheme();
@@ -15,9 +15,13 @@ export const ThemeProvider = ({ children }) => {
     // Load persisted theme preference
     useEffect(() => {
         const loadThemePreference = async () => {
-            const prefs = await fetchUserPreferences();
-            if (prefs.theme) {
-                setThemeType(prefs.theme);
+            try {
+                const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+                if (savedTheme) {
+                    setThemeType(savedTheme);
+                }
+            } catch (error) {
+                console.error("Error loading theme preference:", error);
             }
         };
         loadThemePreference();
@@ -33,8 +37,12 @@ export const ThemeProvider = ({ children }) => {
     }, [themeType, systemScheme]);
 
     const setThemePreference = async (type) => {
-        setThemeType(type);
-        await updateUserPreference('theme', type);
+        try {
+            setThemeType(type);
+            await AsyncStorage.setItem(THEME_STORAGE_KEY, type);
+        } catch (error) {
+            console.error("Error saving theme preference:", error);
+        }
     };
 
     const theme = {

@@ -11,7 +11,7 @@ import {
     Platform
 } from 'react-native';
 import { ChevronLeft, Pencil, Plus, Minus, Check, X, RotateCcw, ChevronRight, Sparkles } from 'lucide-react-native';
-import { fetchLecturesFromCloud, syncLectureToCloud } from '../services/lectureStorage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useNetwork } from '../context/NetworkContext';
 import { aiService } from '../services/ai.js';
@@ -87,15 +87,16 @@ export default function QuizScreen({ route, navigation }) {
 
     const saveQuiz = async (data) => {
         try {
-            const lectures = await fetchLecturesFromCloud();
-            if (lectures && route.params?.id) {
-                const lecture = lectures.find(c => c.id === route.params.id);
-                if (lecture) {
-                    await syncLectureToCloud({ ...lecture, quiz: data });
-                }
+            const storedCards = await AsyncStorage.getItem('@memry_cards');
+            if (storedCards && route.params?.id) {
+                const cards = JSON.parse(storedCards);
+                const updatedCards = cards.map(c =>
+                    c.id === route.params.id ? { ...c, quiz: data } : c
+                );
+                await AsyncStorage.setItem('@memry_cards', JSON.stringify(updatedCards));
             }
         } catch (error) {
-            console.error('Error saving quiz to cloud:', error);
+            console.error('Error saving quiz:', error);
         }
     };
 
@@ -103,10 +104,13 @@ export default function QuizScreen({ route, navigation }) {
         React.useCallback(() => {
             const loadStored = async () => {
                 if (route.params?.id) {
-                    const lectures = await fetchLecturesFromCloud();
-                    const lecture = lectures.find(c => c.id === route.params.id);
-                    if (lecture?.quiz) {
-                        setQuestions(lecture.quiz);
+                    const storedCards = await AsyncStorage.getItem('@memry_cards');
+                    if (storedCards) {
+                        const cards = JSON.parse(storedCards);
+                        const card = cards.find(c => c.id === route.params.id);
+                        if (card?.quiz) {
+                            setQuestions(card.quiz);
+                        }
                     }
                 }
             };

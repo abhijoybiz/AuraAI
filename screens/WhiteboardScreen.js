@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchLecturesFromCloud, syncLectureToCloud } from '../services/lectureStorage';
+import { updateWhiteboard, getLecture } from '../utils/storage';
+import { SyncQueue } from '../utils/syncQueue';
 import { API_BASE_URL } from '../utils/api';
 
 /**
@@ -22,7 +23,7 @@ import { API_BASE_URL } from '../utils/api';
  * - lectureText: Transcript or summary text for generating initial whiteboard
  * - onBack: Function to call when navigating back
  */
-export default function WhiteboardScreen({
+export default function WhiteboardScreen({ 
   lectureId = null,
   lectureText = '',
   onBack = null,
@@ -33,7 +34,7 @@ export default function WhiteboardScreen({
   const [isSaving, setIsSaving] = useState(false);
   const [syncStatus, setSyncStatus] = useState('synced'); // 'synced' | 'pending' | 'error'
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-
+  
   // Debounce timer for auto-save
   const saveTimeoutRef = useRef(null);
   const lastSnapshotRef = useRef(null);
@@ -49,20 +50,19 @@ export default function WhiteboardScreen({
 
     const loadWhiteboard = async () => {
       try {
-        const lectures = await fetchLecturesFromCloud();
-        const lecture = lectures.find(c => c.id === lectureId);
-
-        if (lecture?.journeyMap) {
+        const lecture = await getLecture(lectureId);
+        
+        if (lecture?.whiteboardSnapshot) {
           // Has existing snapshot - will load after editor is ready
-          lastSnapshotRef.current = lecture.journeyMap;
-          setSyncStatus('synced');
+          lastSnapshotRef.current = lecture.whiteboardSnapshot;
+          setSyncStatus(lecture.whiteboardSyncStatus || 'synced');
         } else if (lectureText) {
           // No snapshot - need to generate from backend
           setSyncStatus('pending');
           await initializeFromBackend();
         }
       } catch (error) {
-        console.error('Error loading whiteboard from cloud:', error);
+        console.error('Error loading whiteboard:', error);
       } finally {
         setIsLoading(false);
       }
@@ -103,20 +103,17 @@ export default function WhiteboardScreen({
       if (response.ok) {
         const data = await response.json();
         lastSnapshotRef.current = data.tldraw_snapshot;
-
-        // Initial cloud save
-        const lectures = await fetchLecturesFromCloud();
-        const lecture = lectures.find(c => c.id === lectureId);
-        if (lecture) {
-          await syncLectureToCloud({
-            ...lecture,
-            journeyMap: data.tldraw_snapshot,
-            journeyMapConceptGraph: data.concept_graph
-          });
-        }
-
+        
+        // Save to local storage
+        await updateWhiteboard(lectureId, {
+          whiteboardSnapshot: data.tldraw_snapshot,
+          conceptGraph: data.concept_graph,
+          whiteboardSyncStatus: 'synced',
+          lastWhiteboardSync: new Date().toISOString(),
+        });
+        
         setSyncStatus('synced');
-
+        
         // Load into editor if ready
         if (isEditorReady) {
           sendToWebView('LOAD_SNAPSHOT', { snapshot: data.tldraw_snapshot });
@@ -197,21 +194,24 @@ export default function WhiteboardScreen({
     lastSnapshotRef.current = snapshot;
 
     try {
-      const lectures = await fetchLecturesFromCloud();
-      const lecture = lectures.find(c => c.id === lectureId);
-
-      if (lecture) {
-        setSyncStatus('pending');
-        await syncLectureToCloud({
-          ...lecture,
-          journeyMap: snapshot
-        });
-        setSyncStatus('synced');
-      }
+      // Always save locally first
+      await updateWhiteboard(lectureId, {
+        whiteboardSnapshot: snapshot,
+        whiteboardSyncStatus: 'pending',
+      });
 
       setHasUnsavedChanges(false);
+
+      // Try to sync to backend
+      if (forceSyncToBackend || syncStatus === 'synced') {
+        await syncToBackend(snapshot);
+      } else {
+        // Add to sync queue for later
+        await SyncQueue.add(lectureId, snapshot);
+        setSyncStatus('pending');
+      }
     } catch (error) {
-      console.error('Error saving whiteboard snapshot:', error);
+      console.error('Error saving snapshot:', error);
       setSyncStatus('error');
     } finally {
       setIsSaving(false);
@@ -219,11 +219,37 @@ export default function WhiteboardScreen({
   };
 
   /**
-   * Sync snapshot to backend (Legacy - now handled by syncLectureToCloud)
+   * Sync snapshot to backend
    */
   const syncToBackend = async (snapshot) => {
-    // This is now integrated into syncLectureToCloud
-    setSyncStatus('synced');
+    if (!API_BASE_URL) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/whiteboard/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lecture_id: lectureId,
+          tldraw_snapshot: snapshot,
+          user_id: 'default',
+        }),
+      });
+
+      if (response.ok) {
+        await updateWhiteboard(lectureId, {
+          whiteboardSyncStatus: 'synced',
+          lastWhiteboardSync: new Date().toISOString(),
+        });
+        setSyncStatus('synced');
+        await SyncQueue.clear(lectureId);
+      } else {
+        throw new Error('Backend sync failed');
+      }
+    } catch (error) {
+      console.error('Error syncing to backend:', error);
+      await SyncQueue.add(lectureId, snapshot);
+      setSyncStatus('pending');
+    }
   };
 
   /**
@@ -265,7 +291,7 @@ export default function WhiteboardScreen({
         default: 'http://localhost:3001',
       });
     }
-
+    
     // Production: use bundled assets or hosted URL
     // TODO: Configure for production deployment
     return 'http://localhost:3001';
@@ -330,8 +356,8 @@ export default function WhiteboardScreen({
         <Text style={styles.title}>Whiteboard</Text>
         <View style={styles.headerRight}>
           {renderSyncStatus()}
-          <TouchableOpacity
-            onPress={handleManualSave}
+          <TouchableOpacity 
+            onPress={handleManualSave} 
             style={styles.saveButton}
             disabled={isSaving}
           >

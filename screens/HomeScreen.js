@@ -18,7 +18,7 @@ import {
   Image
 } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
-// AsyncStorage removed for cloud preference sync
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import * as DocumentPicker from 'expo-document-picker';
@@ -29,17 +29,13 @@ import { useNetwork } from '../context/NetworkContext';
 import { SPACING } from '../constants/theme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Mic, Mic2, RefreshCw } from 'lucide-react-native';
-import {
-  deleteLectureFromCloud,
-  syncLectureToCloud,
-  syncAllData,
-  syncFiltersToCloud,
-  fetchLecturesFromCloud,
-  fetchFiltersFromCloud,
-  fetchUserPreferences
-} from '../services/lectureStorage';
+import { deleteLectureFromCloud, syncLectureToCloud, syncAllData, syncFiltersToCloud } from '../services/lectureStorage';
 
-// Cloud-first storage - no legacy local keys needed
+// Storage keys
+const STORAGE_KEYS = {
+  CARDS: '@memry_cards',
+  FILTERS: '@memry_filters'
+};
 
 // Default filters
 const DEFAULT_FILTERS = [
@@ -47,7 +43,13 @@ const DEFAULT_FILTERS = [
   { id: 'favorites', name: 'Favorites', icon: 'star', isDefault: true }
 ];
 
-// Initial data is now fetched from the cloud-only storage service
+// Initial mock data
+const INITIAL_DATA = [
+  { id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479', title: 'Atomic bombshell in call of duty', date: '2025-01-24T10:00:00.000Z', duration: '15min', isFavorite: true, filterIds: [] },
+  { id: '550e8400-e29b-41d4-a716-446655440000', title: 'Quantum mechanics explained', date: '2025-01-23T10:00:00.000Z', duration: '45min', isFavorite: false, filterIds: [] },
+  { id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8', title: 'React Native Performance Tips', date: '2025-01-22T10:00:00.000Z', duration: '12min', isFavorite: false, filterIds: [] },
+  { id: '123e4567-e89b-12d3-a456-426614174000', title: 'The history of the internet', date: '2025-01-20T10:00:00.000Z', duration: '28min', isFavorite: true, filterIds: [] },
+];
 
 // Available icons for filters (Lucide/Feather icons)
 const AVAILABLE_ICONS = [
@@ -95,48 +97,30 @@ export default function HomeScreen({ navigation }) {
   const fabRotation = useRef(new Animated.Value(0)).current;
   const fabScale = useRef(new Animated.Value(1)).current;
 
-  // Preference states
-  const [showManualSync, setShowManualSync] = useState(true);
-
-  // Auto-sync on network reconnection
-  useEffect(() => {
-    if (!isOffline) {
-      console.log('[AUTO-SYNC] Online detected, refreshing data...');
-      loadLectures();
-      loadFilters();
-    }
-  }, [isOffline]);
-
-  // Load preferences
-  useEffect(() => {
-    const loadPrefs = async () => {
-      const prefs = await fetchUserPreferences();
-      if (prefs.showManualSync !== undefined) setShowManualSync(prefs.showManualSync);
-    };
-    loadPrefs();
-  }, []);
-
-  // Load data on focus
+  // Load data on mount and focus
   useFocusEffect(
     useCallback(() => {
-      const init = async () => {
-        setIsLoading(true);
-        await Promise.all([loadLectures(), loadFilters()]);
-        setIsLoading(false);
-      };
-      init();
+      loadData();
     }, [])
   );
 
-  const loadLectures = async () => {
-    const cloudLectures = await fetchLecturesFromCloud();
-    setCards(cloudLectures);
-  };
+  // Save data whenever it changes
+  useEffect(() => {
+    if (cards.length > 0) {
+      saveCards();
+    }
+  }, [cards]);
 
-  const loadFilters = async () => {
-    const cloudFilters = await fetchFiltersFromCloud();
-    setFilters([...DEFAULT_FILTERS, ...cloudFilters]);
-  };
+  useEffect(() => {
+    if (filters.length > DEFAULT_FILTERS.length) {
+      saveFilters();
+    }
+  }, [filters]);
+
+  // Persist cards whenever they change
+  useEffect(() => {
+    saveCards();
+  }, [cards]);
 
   // Animate modals
   useEffect(() => {
@@ -187,22 +171,61 @@ export default function HomeScreen({ navigation }) {
     const hasPreparingCards = cards.some(card => card.status === 'preparing');
     if (hasPreparingCards) {
       const interval = setInterval(() => {
-        loadLectures(); // Refresh cards to check status
+        loadData();
       }, 3000); // Check every 3 seconds
       return () => clearInterval(interval);
     }
   }, [cards]);
 
   // Data persistence functions - ASYNC STORAGE FULLY IMPLEMENTED
-  const handleSync = async () => {
-    Alert.alert('Syncing', 'Refreshing your data from the cloud...');
+  const loadData = async () => {
     try {
-      await loadLectures();
-      await loadFilters();
-      Alert.alert('Success', 'Data refreshed successfully.');
+      const storedCards = await AsyncStorage.getItem(STORAGE_KEYS.CARDS);
+      const storedFilters = await AsyncStorage.getItem(STORAGE_KEYS.FILTERS);
+
+      if (storedCards) {
+        setCards(JSON.parse(storedCards));
+      } else {
+        setCards(INITIAL_DATA);
+        await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(INITIAL_DATA));
+      }
+
+      if (storedFilters) {
+        const customFilters = JSON.parse(storedFilters);
+        setFilters([...DEFAULT_FILTERS, ...customFilters]);
+      }
+    } catch (error) {
+      console.error('Error loading data:', error);
+      setCards(INITIAL_DATA);
+    }
+  };
+
+  const saveCards = async () => {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.CARDS, JSON.stringify(cards));
+    } catch (error) {
+      console.error('Error saving cards:', error);
+    }
+  };
+
+  const saveFilters = async () => {
+    try {
+      const customFilters = filters.filter(f => !f.isDefault);
+      await AsyncStorage.setItem(STORAGE_KEYS.FILTERS, JSON.stringify(customFilters));
+      syncFiltersToCloud(filters); // Fire and forget sync
+    } catch (error) {
+      console.error('Error saving filters:', error);
+    }
+  };
+
+  const handleSync = async () => {
+    Alert.alert('Syncing', 'Syncing your data with the cloud...');
+    try {
+      const result = await syncAllData();
+      await loadData(); // Reload from storage
+      Alert.alert('Success', `Synced ${result.lectures.received} new lectures.`);
     } catch (e) {
-      console.error('[SYNC] Refresh failed:', e);
-      Alert.alert('Error', 'Refresh failed. Please check your connection.');
+      Alert.alert('Error', 'Sync failed. Please check your connection.');
     }
   };
 
@@ -233,21 +256,15 @@ export default function HomeScreen({ navigation }) {
 
   // Card actions
   const toggleFavorite = async (cardId) => {
-    const card = cards.find(c => c.id === cardId);
-    if (!card) return;
+    const updatedCards = cards.map(card =>
+      card.id === cardId ? { ...card, isFavorite: !card.isFavorite } : card
+    );
+    setCards(updatedCards);
 
-    const newFavorite = !card.isFavorite;
-    // Optimistic update
-    setCards(cards.map(c => c.id === cardId ? { ...c, isFavorite: newFavorite } : c));
-
-    try {
-      const result = await syncLectureToCloud({ ...card, isFavorite: newFavorite });
-      if (!result.success) throw new Error(result.reason);
-    } catch (error) {
-      console.error('[SYNC] Failed to sync favorite status:', error);
-      // Rollback
-      setCards(cards.map(c => c.id === cardId ? { ...c, isFavorite: !newFavorite } : c));
-      Alert.alert('Error', 'Failed to update favorite status on cloud.');
+    // Sync to cloud
+    const updatedCard = updatedCards.find(c => c.id === cardId);
+    if (updatedCard) {
+      syncLectureToCloud(updatedCard);
     }
   };
 
@@ -270,9 +287,8 @@ export default function HomeScreen({ navigation }) {
               await deleteLectureFromCloud(cardId);
             } catch (error) {
               console.error('Failed to sync deletion to cloud:', error);
-              Alert.alert('Error', 'Failed to delete card from cloud. Please check your connection.');
-              // If cloud delete fails, we might want to re-add it locally or mark for retry
-              // For now, we'll let it be deleted locally for UX, but log the error.
+              // We don't block the UI if cloud delete fails, 
+              // but we should probably inform the user if they're offline
             }
           }
         }
@@ -281,50 +297,20 @@ export default function HomeScreen({ navigation }) {
   };
 
   const renameCard = async () => {
-    const trimmedTitle = renameText.trim();
-    if (!trimmedTitle) return;
+    if (renameText.trim()) {
+      const updatedCards = cards.map(card =>
+        card.id === selectedCard.id ? { ...card, title: renameText.trim() } : card
+      );
+      setCards(updatedCards);
 
-    // Check if renaming to the same name (case-insensitive)
-    if (trimmedTitle.toLowerCase() === selectedCard.title.trim().toLowerCase()) {
-      Alert.alert('No Change', 'The new name is the same as the current name.');
-      return;
-    }
-
-    // Duplicate check - ensure no OTHER card has this title
-    const isDuplicate = cards.some(c =>
-      c.title.toLowerCase() === trimmedTitle.toLowerCase() && c.id !== selectedCard.id
-    );
-
-    if (isDuplicate) {
-      Alert.alert('Duplicate Title', 'A lecture with this title already exists. Please choose a different name.');
-      return;
-    }
-
-    // Optimistic update
-    const oldTitle = selectedCard.title;
-    setCards(cards.map(card =>
-      card.id === selectedCard.id ? { ...card, title: trimmedTitle } : card
-    ));
-
-    setShowRenameModal(false);
-    setShowCardMenu(false);
-    setRenameText('');
-
-    try {
-      const result = await syncLectureToCloud({ ...selectedCard, title: trimmedTitle });
-      if (!result.success) {
-        if (result.reason === 'duplicate_title') {
-          throw new Error('Duplicate title on server');
-        }
-        throw new Error('Sync failed');
+      const updatedCard = updatedCards.find(c => c.id === selectedCard.id);
+      if (updatedCard) {
+        syncLectureToCloud(updatedCard);
       }
-    } catch (error) {
-      console.error('[SYNC] Failed to sync rename:', error);
-      Alert.alert('Error', 'Failed to update title on cloud.');
-      // Rollback
-      setCards(cards.map(card =>
-        card.id === selectedCard.id ? { ...card, title: oldTitle } : card
-      ));
+
+      setShowRenameModal(false);
+      setShowCardMenu(false);
+      setRenameText('');
     }
   };
 
@@ -349,17 +335,12 @@ export default function HomeScreen({ navigation }) {
     const updatedCard = updatedCards.find(c => c.id === selectedCard.id);
     if (updatedCard) {
       setSelectedCard(updatedCard);
-      try {
-        await syncLectureToCloud(updatedCard);
-      } catch (error) {
-        console.error('[SYNC] Failed to sync category assignment:', error);
-        Alert.alert('Error', 'Failed to update filter assignment on cloud.');
-      }
+      syncLectureToCloud(updatedCard);
     }
   };
 
   // Filter management
-  const createNewFilter = async () => {
+  const createNewFilter = () => {
     const trimmedName = newFilterName.trim();
 
     if (!trimmedName) {
@@ -373,44 +354,28 @@ export default function HomeScreen({ navigation }) {
     }
 
     const newFilter = {
-      id: `filter_${Date.now()}`, // Temporary ID, will be replaced by DB ID
+      id: `filter_${Date.now()}`,
       name: trimmedName,
       icon: newFilterIcon,
       isDefault: false
     };
 
-    // Optimistic update
     setFilters([...filters, newFilter]);
     setNewFilterName('');
     setNewFilterIcon('bookmark');
     closeWithAnimation(setShowNewFilterModal);
-
-    try {
-      // Sync to cloud
-      await syncFiltersToCloud([...filters, newFilter]);
-      await loadFilters(); // Reload to get actual IDs and ensure consistency
-    } catch (error) {
-      console.error('[SYNC] Failed to create filter on cloud:', error);
-      Alert.alert('Error', 'Failed to create filter on cloud. Please try again.');
-      // Rollback if cloud sync fails
-      setFilters(prevFilters => prevFilters.filter(f => f.id !== newFilter.id));
-    }
   };
 
-  const deleteFilter = async (filterId) => {
+  const deleteFilter = (filterId) => {
     Alert.alert(
       'Delete Filter',
-      'Are you sure you want to delete this filter? This will also remove it from any assigned cards.',
+      'Are you sure you want to delete this filter?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: async () => {
-            const originalFilters = filters;
-            const originalCards = cards;
-
-            // Optimistic update
+          onPress: () => {
             setFilters(filters.filter(f => f.id !== filterId));
             if (activeFilter === filterId) {
               setActiveFilter('all');
@@ -419,26 +384,6 @@ export default function HomeScreen({ navigation }) {
               ...card,
               filterIds: card.filterIds?.filter(id => id !== filterId) || []
             })));
-
-            try {
-              // Sync deletion to cloud
-              await syncFiltersToCloud(filters.filter(f => f.id !== filterId));
-              // Also update cards in cloud that had this filter
-              const cardsToUpdate = originalCards.filter(card => card.filterIds?.includes(filterId));
-              await Promise.all(cardsToUpdate.map(card =>
-                syncLectureToCloud({
-                  ...card,
-                  filterIds: card.filterIds.filter(id => id !== filterId)
-                })
-              ));
-              await loadLectures(); // Reload cards to ensure consistency
-            } catch (error) {
-              console.error('[SYNC] Failed to delete filter from cloud:', error);
-              Alert.alert('Error', 'Failed to delete filter from cloud. Please try again.');
-              // Rollback
-              setFilters(originalFilters);
-              setCards(originalCards);
-            }
           }
         }
       ]
@@ -497,8 +442,15 @@ export default function HomeScreen({ navigation }) {
           return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
         };
 
-        // Default title
+        // Dynamic Title Generation
         let lectureTitle = 'New Lecture';
+        try {
+          const storedCards = await AsyncStorage.getItem('@memry_cards');
+          const cards = storedCards ? JSON.parse(storedCards) : [];
+          lectureTitle = `Lecture ${cards.length + 1}`;
+        } catch (e) {
+          console.error('Error getting card count', e);
+        }
 
         navigation.replace('Results', {
           uri: asset.uri,
@@ -620,26 +572,18 @@ export default function HomeScreen({ navigation }) {
             <Text style={[styles.logoSubtext, { color: colors.textSecondary }]}>LECTURES SIMPLIFIED</Text>
           </View>
         </View>
-        <View style={styles.headerActions}>
-          {showManualSync && (
-            <TouchableOpacity
-              onPress={handleSync}
-              style={[styles.syncButton, { backgroundColor: colors.tint }]}
-            >
-              <RefreshCw size={18} color={colors.primary} />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={styles.avatarButton}
-            onPress={() => navigation.navigate('Settings')}
-          >
-            <View style={[styles.avatar, { backgroundColor: isDark ? colors.primary : '#1a1a1a' }]}>
-              <Text style={[styles.avatarText, { color: isDark ? colors.background : '#fff' }]}>
-                {user?.user_metadata?.full_name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={[styles.accountPill, { backgroundColor: colors.tint, borderColor: colors.border }]}
+          onPress={() => navigation.navigate('Settings')}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.avatar, { backgroundColor: isDark ? colors.primary : '#1a1a1a' }]}>
+            <Text style={[styles.avatarText, { color: isDark ? colors.background : '#fff' }]}>
+              {user?.user_metadata?.full_name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'}
+            </Text>
+          </View>
+          <Feather name="chevron-down" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} />
+        </TouchableOpacity>
       </View>
 
       {/* Search Bar */}
@@ -725,6 +669,19 @@ export default function HomeScreen({ navigation }) {
             pointerEvents="none"
           />
         </View>
+
+        <TouchableOpacity
+          onPress={handleSync}
+          style={{
+            justifyContent: 'center',
+            paddingHorizontal: 12,
+            height: '100%',
+            borderLeftWidth: 1,
+            borderLeftColor: colors.border,
+            marginLeft: 4
+          }}>
+          <RefreshCw size={18} color={colors.textSecondary} />
+        </TouchableOpacity>
       </View>
 
       {/* Cards List with Progressive Blur */}
@@ -1320,26 +1277,6 @@ const styles = StyleSheet.create({
     opacity: 0.6,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  syncButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
-  },
-  avatarButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    overflow: 'hidden',
   },
   accountPill: {
     flexDirection: 'row',

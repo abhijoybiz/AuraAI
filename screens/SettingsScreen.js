@@ -23,15 +23,11 @@ import {
     LogOut,
     Mail,
     Shield,
-    Check,
-    RefreshCw
+    Check
 } from 'lucide-react-native';
-// AsyncStorage removed for cloud preference sync
-import * as Updates from 'expo-updates';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import { fetchUserPreferences, updateUserPreference } from '../services/lectureStorage';
 import { StatusBar } from 'expo-status-bar';
 
 const { height } = Dimensions.get('window');
@@ -80,13 +76,13 @@ export default function SettingsScreen({ navigation }) {
     const translateY = useRef(new Animated.Value(-height)).current;
     const opacity = useRef(new Animated.Value(0)).current;
 
+    // User profile state
     const [profile, setProfile] = useState({
         displayName: '',
         email: '',
         avatarInitial: '?',
     });
     const [isSigningOut, setIsSigningOut] = useState(false);
-    const [showManualSync, setShowManualSync] = useState(true);
 
     // Entrance Animation
     useEffect(() => {
@@ -121,12 +117,14 @@ export default function SettingsScreen({ navigation }) {
         ]).start(() => navigation.goBack());
     };
 
-    // Fetch data and prefs
+    // Fetch user profile data
     useEffect(() => {
         const fetchProfile = async () => {
             if (!user) return;
+
             let displayName = 'User';
             let email = user.email || '';
+
             if (user.user_metadata?.full_name) {
                 displayName = user.user_metadata.full_name;
             } else {
@@ -136,30 +134,27 @@ export default function SettingsScreen({ navigation }) {
                         .select('display_name, email')
                         .eq('id', user.id)
                         .single();
+
                     if (data && !error) {
                         displayName = data.display_name || displayName;
                         email = data.email || email;
                     }
-                } catch (err) { }
+                } catch (err) {
+                    // Fail silently
+                }
             }
-            const avatarInitial = displayName.charAt(0).toUpperCase() || email.charAt(0).toUpperCase() || '?';
-            setProfile({ displayName, email, avatarInitial });
-        };
 
-        const loadPrefs = async () => {
-            const prefs = await fetchUserPreferences();
-            if (prefs.showManualSync !== undefined) setShowManualSync(prefs.showManualSync);
+            const avatarInitial = displayName.charAt(0).toUpperCase() || email.charAt(0).toUpperCase() || '?';
+
+            setProfile({
+                displayName,
+                email,
+                avatarInitial,
+            });
         };
 
         fetchProfile();
-        loadPrefs();
     }, [user]);
-
-    const toggleManualSync = async () => {
-        const newValue = !showManualSync;
-        setShowManualSync(newValue);
-        await updateUserPreference('showManualSync', newValue);
-    };
 
     const handleSignOut = () => {
         Alert.alert(
@@ -310,15 +305,16 @@ export default function SettingsScreen({ navigation }) {
                         </View>
                     </View>
 
+                    {/* Notifications & Privacy */}
                     <View style={styles.section}>
                         <SectionHeader title="Preferences" colors={colors} />
                         <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                             <SettingItem
-                                icon={RefreshCw}
-                                title="Show Manual Sync"
+                                icon={Bell}
+                                title="Push Notifications"
                                 toggle={true}
-                                onToggleChange={showManualSync}
-                                onPress={toggleManualSync}
+                                onToggleChange={true}
+                                onPress={() => { }}
                                 colors={colors}
                             />
                             <SettingItem
@@ -339,16 +335,6 @@ export default function SettingsScreen({ navigation }) {
                         <LogOut size={20} color="#EF4444" />
                         <Text style={styles.signOutText}>Sign Out</Text>
                     </TouchableOpacity>
-
-                    {/* Footer Info */}
-                    <View style={styles.footerContainer}>
-                        <Text style={[styles.versionText, { color: colors.textSecondary }]}>
-                            Memry v1.1.0 {Updates.channel ? `(${Updates.channel})` : ''}
-                        </Text>
-                        <Text style={[styles.updateIdText, { color: colors.textSecondary }]}>
-                            Update ID: {Updates.updateId?.substring(0, 12) || 'Development'}
-                        </Text>
-                    </View>
 
                     <View style={{ height: 100 }} />
                 </ScrollView>
@@ -537,22 +523,5 @@ const styles = StyleSheet.create({
         color: '#EF4444',
         fontSize: 16,
         fontFamily: 'Inter_700Bold',
-    },
-    footerContainer: {
-        marginTop: 40,
-        alignItems: 'center',
-        paddingBottom: 20,
-    },
-    versionText: {
-        fontSize: 14,
-        fontFamily: 'Inter_700Bold',
-        letterSpacing: 0.5,
-        opacity: 0.8,
-    },
-    updateIdText: {
-        fontSize: 11,
-        fontFamily: 'Inter_400Regular',
-        marginTop: 4,
-        opacity: 0.5,
     }
 });
