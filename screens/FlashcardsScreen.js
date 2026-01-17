@@ -12,12 +12,12 @@ import {
     Platform
 } from 'react-native';
 import { ChevronLeft, Layers, Plus, Minus, RotateCcw, ChevronRight, Sparkles } from 'lucide-react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../context/ThemeContext';
 import { useNetwork } from '../context/NetworkContext';
 import { aiService } from '../services/ai.js';
 import { useFocusEffect } from '@react-navigation/native';
 import { Alert } from 'react-native';
+import { fetchLecturesFromCloud, syncLectureToCloud } from '../services/lectureStorage';
 
 const { width } = Dimensions.get('window');
 
@@ -103,16 +103,18 @@ export default function FlashcardsScreen({ route, navigation }) {
 
     const saveFlashcards = async (data) => {
         try {
-            const storedCards = await AsyncStorage.getItem('@memry_cards');
-            if (storedCards && route.params?.id) {
-                const cards = JSON.parse(storedCards);
-                const updatedCards = cards.map(c =>
-                    c.id === route.params.id ? { ...c, flashcards: data } : c
-                );
-                await AsyncStorage.setItem('@memry_cards', JSON.stringify(updatedCards));
+            if (!route.params?.id) return;
+
+            // Fetch current lecture data from cloud and update flashcards
+            const lectures = await fetchLecturesFromCloud();
+            const lecture = lectures.find(c => c.id === route.params.id);
+
+            if (lecture) {
+                const updatedLecture = { ...lecture, flashcards: data };
+                await syncLectureToCloud(updatedLecture);
             }
         } catch (error) {
-            console.error('Error saving flashcards:', error);
+            console.error('Error saving flashcards to cloud:', error);
         }
     };
 
@@ -120,13 +122,14 @@ export default function FlashcardsScreen({ route, navigation }) {
         React.useCallback(() => {
             const loadStored = async () => {
                 if (route.params?.id) {
-                    const storedCards = await AsyncStorage.getItem('@memry_cards');
-                    if (storedCards) {
-                        const cards = JSON.parse(storedCards);
-                        const card = cards.find(c => c.id === route.params.id);
-                        if (card?.flashcards) {
-                            setFlashcards(card.flashcards);
+                    try {
+                        const lectures = await fetchLecturesFromCloud();
+                        const lecture = lectures.find(c => c.id === route.params.id);
+                        if (lecture?.flashcards) {
+                            setFlashcards(lecture.flashcards);
                         }
+                    } catch (error) {
+                        console.error('Error loading flashcards from cloud:', error);
                     }
                 }
             };

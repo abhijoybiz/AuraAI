@@ -15,7 +15,7 @@ import {
     KeyboardAvoidingView
 } from 'react-native';
 import { ChevronLeft, Send, Sparkles, Layers, Pencil, BookOpenText, Route, MessageSquare, ArrowUp } from 'lucide-react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchLecturesFromCloud, syncLectureToCloud } from '../services/lectureStorage';
 import { useTheme } from '../context/ThemeContext';
 import { useNetwork } from '../context/NetworkContext';
 import { aiService } from '../services/ai.js';
@@ -167,7 +167,7 @@ export default function AIChatScreen({ route, navigation }) {
     const flatListRef = useRef(null);
     const keyboardHeight = useRef(new Animated.Value(0)).current;
 
-    const storageKey = `@memry_chat_${lectureId}`;
+    // Cloud-only chat history persistence
 
     useEffect(() => {
         if (lectureId) loadChat();
@@ -175,11 +175,12 @@ export default function AIChatScreen({ route, navigation }) {
 
     const loadChat = async () => {
         try {
-            const saved = await AsyncStorage.getItem(storageKey);
+            const lectures = await fetchLecturesFromCloud();
+            const lecture = lectures.find(c => c.id === lectureId);
             let currentMessages = [];
 
-            if (saved) {
-                currentMessages = JSON.parse(saved);
+            if (lecture?.chatHistory) {
+                currentMessages = lecture.chatHistory;
                 setMessages(currentMessages);
             }
 
@@ -196,9 +197,13 @@ export default function AIChatScreen({ route, navigation }) {
     const saveChat = async (newMessages) => {
         if (!lectureId) return;
         try {
-            await AsyncStorage.setItem(storageKey, JSON.stringify(newMessages));
+            const lectures = await fetchLecturesFromCloud();
+            const lecture = lectures.find(c => c.id === lectureId);
+            if (lecture) {
+                await syncLectureToCloud({ ...lecture, chatHistory: newMessages });
+            }
         } catch (error) {
-            console.error('Error saving chat:', error);
+            console.error('Error saving chat to cloud:', error);
         }
     };
 
@@ -232,18 +237,15 @@ export default function AIChatScreen({ route, navigation }) {
         setLoading(true);
 
         try {
-            // Ensure we have transcript. If not, maybe we can fetch it?
+            // Ensure we have transcript. If not, fetch from cloud.
             let contextTranscript = transcript;
             if (!contextTranscript) {
-                const storedCards = await AsyncStorage.getItem('@memry_cards');
-                if (storedCards) {
-                    const cards = JSON.parse(storedCards);
-                    const card = cards.find(c => c.id === lectureId);
-                    if (card && card.transcript) {
-                        contextTranscript = Array.isArray(card.transcript)
-                            ? card.transcript.map(t => t.text).join('\n')
-                            : card.transcript;
-                    }
+                const lectures = await fetchLecturesFromCloud();
+                const lecture = lectures.find(c => c.id === lectureId);
+                if (lecture && lecture.transcript) {
+                    contextTranscript = Array.isArray(lecture.transcript)
+                        ? lecture.transcript.map(t => t.text).join('\n')
+                        : lecture.transcript;
                 }
             }
 

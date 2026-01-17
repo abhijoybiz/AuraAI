@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { ChevronLeft, RefreshCw, Save, CloudOff, Cloud, Loader2, Sparkles, Route } from 'lucide-react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchLecturesFromCloud, syncLectureToCloud } from '../services/lectureStorage';
 import { useTheme } from '../context/ThemeContext';
 import { useNetwork } from '../context/NetworkContext';
 import { API_BASE_URL } from '../utils/api';
@@ -87,20 +87,17 @@ export default function JourneymapScreen({ route, navigation }) {
       try {
         setStatus('loading');
 
-        // Check local storage for existing journey map
-        const storedCards = await AsyncStorage.getItem('@memry_cards');
-        if (storedCards) {
-          const cards = JSON.parse(storedCards);
-          const card = cards.find(c => c.id === lectureId);
+        // Check cloud storage for existing journey map
+        const lectures = await fetchLecturesFromCloud();
+        const lecture = lectures.find(c => c.id === lectureId);
 
-          if (card?.journeyMapSnapshot) {
-            lastSnapshotRef.current = card.journeyMapSnapshot;
-            setConceptGraph(card.journeyMapConceptGraph || null);
-            setSyncStatus(card.journeyMapSyncStatus || 'synced');
-            setHasExistingMap(true);
-            setStatus('ready');
-            return;
-          }
+        if (lecture?.journeyMap) {
+          lastSnapshotRef.current = lecture.journeyMap;
+          setConceptGraph(lecture.journeyMapConceptGraph || null);
+          setSyncStatus('synced');
+          setHasExistingMap(true);
+          setStatus('ready');
+          return;
         }
 
         // Check if transcript is available
@@ -238,28 +235,24 @@ export default function JourneymapScreen({ route, navigation }) {
   };
 
   /**
-   * Save to local storage
+   * Save to cloud storage
    */
   const saveToLocalStorage = async (snapshot, graph, syncStatusVal) => {
     try {
-      const storedCards = await AsyncStorage.getItem('@memry_cards');
-      if (storedCards) {
-        const cards = JSON.parse(storedCards);
-        const updatedCards = cards.map(card =>
-          card.id === lectureId
-            ? {
-              ...card,
-              journeyMapSnapshot: snapshot,
-              journeyMapConceptGraph: graph,
-              journeyMapSyncStatus: syncStatusVal,
-              journeyMapUpdatedAt: new Date().toISOString(),
-            }
-            : card
-        );
-        await AsyncStorage.setItem('@memry_cards', JSON.stringify(updatedCards));
+      const lectures = await fetchLecturesFromCloud();
+      const lecture = lectures.find(c => c.id === lectureId);
+
+      if (lecture) {
+        const updatedLecture = {
+          ...lecture,
+          journeyMap: snapshot,
+          journeyMapConceptGraph: graph,
+          journeyMapUpdatedAt: new Date().toISOString(),
+        };
+        await syncLectureToCloud(updatedLecture);
       }
     } catch (error) {
-      console.error('[JOURNEYMAP] Error saving to local storage:', error);
+      console.error('[JOURNEYMAP] Error saving to cloud:', error);
     }
   };
 

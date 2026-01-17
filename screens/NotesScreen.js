@@ -31,7 +31,7 @@ import {
     Send,
     Terminal
 } from 'lucide-react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fetchLecturesFromCloud, syncLectureToCloud } from '../services/lectureStorage';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -157,31 +157,29 @@ export default function NotesScreen({ route, navigation }) {
     const loadStoredNotes = async () => {
         if (!id) return;
         try {
-            const storedCards = await AsyncStorage.getItem('@memry_cards');
-            if (storedCards) {
-                const cards = JSON.parse(storedCards);
-                const card = cards.find(c => c.id === id);
-                if (card) {
-                    const existingTitle = card.title || 'Untitled Note';
-                    setTitle(existingTitle);
+            const lectures = await fetchLecturesFromCloud();
+            const lecture = lectures.find(c => c.id === id);
 
-                    if (card.notes && card.notes.length > 0) {
-                        setBlocks(card.notes);
-                    } else if (transcript) {
-                        // Only auto-generate if online
-                        if (!isOffline) {
-                            handleGenerate(existingTitle);
-                        } else {
-                            setBlocks([{ type: 'paragraph', content: 'You are offline. Connect to generate AI notes for this lecture.' }]);
-                        }
+            if (lecture) {
+                const existingTitle = lecture.title || 'Untitled Note';
+                setTitle(existingTitle);
+
+                if (lecture.notes && lecture.notes.length > 0) {
+                    setBlocks(lecture.notes);
+                } else if (transcript) {
+                    // Only auto-generate if online
+                    if (!isOffline) {
+                        handleGenerate(existingTitle);
                     } else {
-                        // Empty state: add one block
-                        setBlocks([{ type: 'paragraph', content: '' }]);
+                        setBlocks([{ type: 'paragraph', content: 'You are offline. Connect to generate AI notes for this lecture.' }]);
                     }
+                } else {
+                    // Empty state: add one block
+                    setBlocks([{ type: 'paragraph', content: '' }]);
                 }
             }
         } catch (error) {
-            console.error('Error loading notes:', error);
+            console.error('Error loading notes from cloud:', error);
         }
     };
 
@@ -215,21 +213,22 @@ export default function NotesScreen({ route, navigation }) {
 
     const saveNotes = async (newBlocks, newTitle) => {
         try {
-            const storedCards = await AsyncStorage.getItem('@memry_cards');
-            if (storedCards && id) {
-                const cards = JSON.parse(storedCards);
-                const updatedCards = cards.map(c =>
-                    c.id === id ? {
-                        ...c,
-                        notes: newBlocks || blocks,
-                        title: newTitle || title
-                    } : c
-                );
-                await AsyncStorage.setItem('@memry_cards', JSON.stringify(updatedCards));
+            if (!id) return;
+
+            const lectures = await fetchLecturesFromCloud();
+            const lecture = lectures.find(c => c.id === id);
+
+            if (lecture) {
+                const updatedLecture = {
+                    ...lecture,
+                    notes: newBlocks || blocks,
+                    title: newTitle || title
+                };
+                await syncLectureToCloud(updatedLecture);
                 setHasChanges(false);
             }
         } catch (error) {
-            console.error('Error saving notes:', error);
+            console.error('Error saving notes to cloud:', error);
         }
     };
 

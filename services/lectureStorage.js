@@ -1,14 +1,10 @@
 // services/lectureStorage.js
-// Unified lecture storage service that syncs between local AsyncStorage and Supabase cloud
-// This bridges the gap between @memry_cards (local) and lectures table (cloud)
+// Cloud-first lecture storage service using Supabase
+// Local persistence is removed to ensure cross-device consistency
 
 import { supabase, generateUUID } from '../lib/supabase';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import * as FileSystem from 'expo-file-system/legacy';
-
-const LOCAL_CARDS_KEY = '@memry_cards';
-const LOCAL_FILTERS_KEY = '@memry_filters';
 
 /**
  * Robust base64 to ArrayBuffer converter (Pure JS for RN compatibility)
@@ -18,7 +14,6 @@ function base64ToArrayBuffer(base64) {
     const bytes = new Uint8Array(Math.floor(base64.length * 0.75));
     let i, j = 0;
 
-    // Simple lookup table would be faster, but this is robust for small files
     const lookup = new Uint8Array(256);
     for (i = 0; i < chars.length; i++) lookup[chars.charCodeAt(i)] = i;
 
@@ -37,19 +32,14 @@ function base64ToArrayBuffer(base64) {
 
 /**
  * Safely parses a date string or object into a valid ISO string.
- * Prevents "RangeError: Date value out of bounds"
  */
 const safeIsoDate = (dateVal) => {
     try {
         if (!dateVal) return new Date().toISOString();
         const d = new Date(dateVal);
-        // Check if date is valid
-        if (isNaN(d.getTime())) {
-            return new Date().toISOString();
-        }
+        if (isNaN(d.getTime())) return new Date().toISOString();
         return d.toISOString();
     } catch (e) {
-        console.error('[DATE HELP] Critical date parse error:', e);
         return new Date().toISOString();
     }
 };
@@ -71,25 +61,30 @@ const formatDisplayDate = (dateVal) => {
 /**
  * Maps local card format to Supabase lectures table format
  */
-const mapLocalToCloud = (card, userId) => ({
-    id: card.id,
-    user_id: userId,
-    title: card.title || 'Untitled',
-    duration: card.duration || '00:00',
-    // Map local filterIds array to the cloud category string
-    category: (card.filterIds && card.filterIds.length > 0) ? card.filterIds.join(',') : null,
-    is_favorite: card.isFavorite || false,
-    transcript: card.transcript ? JSON.stringify(card.transcript) : null,
-    segments: card.segments || null,
-    summary: card.summary || null,
-    flashcards: card.flashcards || null,
-    quiz: card.quiz || null,
-    notes: card.notes || null,
-    journey_map: card.journeyMap || null,
-    audio_url: card.uri || card.audioUri || null,
-    created_at: safeIsoDate(card.date), // Use safe helper
-    updated_at: new Date().toISOString(),
-});
+const mapLocalToCloud = (card, userId) => {
+    const rawUri = card.uri || card.audioUri || null;
+    const isCloudUri = rawUri && rawUri.startsWith('http');
+
+    return {
+        id: card.id,
+        user_id: userId,
+        title: card.title || 'Untitled',
+        duration: card.duration || '00:00',
+        category: (card.filterIds && card.filterIds.length > 0) ? card.filterIds.join(',') : null,
+        is_favorite: card.isFavorite || false,
+        transcript: card.transcript ? JSON.stringify(card.transcript) : null,
+        segments: card.segments || null,
+        summary: card.summary || null,
+        flashcards: card.flashcards || null,
+        quiz: card.quiz || null,
+        notes: card.notes || null,
+        journey_map: card.journeyMap || null,
+        chat_history: card.chatHistory ? JSON.stringify(card.chatHistory) : null,
+        audio_url: isCloudUri ? rawUri : null,
+        created_at: safeIsoDate(card.date),
+        updated_at: new Date().toISOString(),
+    };
+};
 
 /**
  * Maps Supabase lecture format to local card format
@@ -99,7 +94,6 @@ const mapCloudToLocal = (lecture) => ({
     title: lecture.title,
     date: formatDisplayDate(lecture.created_at),
     duration: lecture.duration,
-    // Safely map the cloud category string back to the local filterIds array
     filterIds: lecture.category ? lecture.category.split(',') : [],
     isFavorite: lecture.is_favorite || false,
     transcript: lecture.transcript ? (typeof lecture.transcript === 'string' ? JSON.parse(lecture.transcript) : lecture.transcript) : [],
@@ -109,6 +103,7 @@ const mapCloudToLocal = (lecture) => ({
     quiz: lecture.quiz,
     notes: lecture.notes,
     journeyMap: lecture.journey_map,
+    chatHistory: lecture.chat_history ? (typeof lecture.chat_history === 'string' ? JSON.parse(lecture.chat_history) : lecture.chat_history) : [],
     uri: lecture.audio_url,
     audioUri: lecture.audio_url,
     source: 'cloud',
@@ -129,145 +124,177 @@ const isOnline = async () => {
 };
 
 /**
- * Sync a single lecture to cloud
- * This is called after any local update to persist to Supabase
+ * Validates and returns a proper cloud audio URL
+ * Returns null if the URL is a local file URI
  */
+const validateCloudAudioUrl = (uri) => {
+    if (!uri) return null;
+    // Only accept HTTPS URLs (cloud URLs)
+    if (uri.startsWith('https://')) return uri;
+    if (uri.startsWith('http://')) return uri;
+    // Local file URIs are not valid for cross-device sync
+    return null;
+};
+
 /**
  * Uploads a local audio file to Supabase Storage
+ * Includes retry logic and comprehensive error handling
  */
-export const uploadAudioForLecture = async (localUri, lectureId) => {
+export const uploadAudioForLecture = async (localUri, lectureId, retryCount = 0) => {
+    const MAX_RETRIES = 2;
+
     try {
-        if (!localUri || localUri.startsWith('http')) {
-            return localUri;
-        }
-
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user) throw new Error('No user session');
-
-        // Read file as Base64
-        // check if file exists first to avoid noisy errors
-        const fileInfo = await FileSystem.getInfoAsync(localUri);
-        if (!fileInfo.exists) {
-            console.warn(`[CLOUD STORAGE] Local file missing, skipping upload: ${localUri}`);
+        // If already a cloud URL, validate and return
+        if (!localUri) {
+            console.log('[CLOUD STORAGE] No URI provided');
             return null;
         }
 
+        if (localUri.startsWith('http')) {
+            console.log('[CLOUD STORAGE] Already a cloud URL:', localUri.substring(0, 50) + '...');
+            return localUri;
+        }
+
+        console.log('[CLOUD STORAGE] Starting upload for lecture:', lectureId);
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
+            console.error('[CLOUD STORAGE] No user session available');
+            throw new Error('No user session');
+        }
+
+        const fileInfo = await FileSystem.getInfoAsync(localUri);
+        if (!fileInfo.exists) {
+            console.error('[CLOUD STORAGE] Local file does not exist:', localUri);
+            return null;
+        }
+
+        console.log('[CLOUD STORAGE] File size:', fileInfo.size, 'bytes');
+
         const base64 = await FileSystem.readAsStringAsync(localUri, {
-            encoding: 'base64',
+            encoding: FileSystem.EncodingType.Base64,
         });
 
-        // Construct path: user_id/lecture_id.m4a
-        const path = `${session.user.id}/${lectureId}.m4a`;
+        if (!base64 || base64.length === 0) {
+            console.error('[CLOUD STORAGE] Failed to read file as base64');
+            return null;
+        }
 
-        // Upload
-        const { data, error } = await supabase.storage
+        // Determine file extension from URI
+        const extension = localUri.includes('.m4a') ? 'm4a' :
+            localUri.includes('.wav') ? 'wav' :
+                localUri.includes('.mp3') ? 'mp3' : 'm4a';
+
+        const contentType = extension === 'wav' ? 'audio/wav' :
+            extension === 'mp3' ? 'audio/mpeg' : 'audio/m4a';
+
+        const path = `${session.user.id}/${lectureId}.${extension}`;
+        console.log('[CLOUD STORAGE] Uploading to path:', path);
+
+        const { error } = await supabase.storage
             .from('lecture_audio')
             .upload(path, base64ToArrayBuffer(base64), {
-                contentType: 'audio/m4a',
+                contentType: contentType,
                 upsert: true
             });
 
-        if (error) throw error;
+        if (error) {
+            console.error('[CLOUD STORAGE] Upload error:', error.message);
+            throw error;
+        }
 
-        // Get Public URL
         const { data: { publicUrl } } = supabase.storage
             .from('lecture_audio')
             .getPublicUrl(path);
 
-        console.log('[CLOUD STORAGE] Uploaded audio:', publicUrl);
+        console.log('[CLOUD STORAGE] Upload successful. Public URL:', publicUrl.substring(0, 50) + '...');
         return publicUrl;
-
     } catch (error) {
-        console.error('[CLOUD STORAGE] Upload failed:', error);
-        return null; // Return null to indicate failure, but don't block metadata sync completely
+        console.error('[CLOUD STORAGE] Upload failed:', error.message);
+
+        // Retry logic for transient failures
+        if (retryCount < MAX_RETRIES) {
+            console.log(`[CLOUD STORAGE] Retrying upload (attempt ${retryCount + 2}/${MAX_RETRIES + 1})...`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+            return uploadAudioForLecture(localUri, lectureId, retryCount + 1);
+        }
+
+        return null;
     }
 };
 
 /**
- * Sync a single lecture to cloud
- * This is called after any local update to persist to Supabase
+ * Direct Cloud Sync: Saves/Updates a lecture directly in Supabase
+ * CRITICAL: Ensures audio is uploaded to cloud storage before syncing
  */
 export const syncLectureToCloud = async (card) => {
+    console.log('[CLOUD SYNC] Starting sync for lecture:', card.id, 'Title:', card.title);
+
     const { data: { session } } = await supabase.auth.getSession();
     const user = session?.user;
     if (!user) {
+        console.error('[CLOUD SYNC] Not authenticated');
         return { success: false, reason: 'not_authenticated' };
     }
 
-    const online = await isOnline();
-    if (!online) {
+    if (!(await isOnline())) {
+        console.warn('[CLOUD SYNC] Device is offline, sync deferred');
         return { success: false, reason: 'offline' };
     }
 
-    // Guard: Supabase requires UUID for primary key
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(card.id)) {
-        return { success: false, reason: 'invalid_id_format' };
+    // Title Uniqueness Check (Local check should happen in UI, but this is a safety guard)
+    const { data: duplicate } = await supabase
+        .from('lectures')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('title', card.title)
+        .neq('id', card.id)
+        .maybeSingle();
+
+    if (duplicate) {
+        console.warn('[CLOUD SYNC] Duplicate title detected:', card.title);
+        return { success: false, reason: 'duplicate_title' };
     }
 
-    // Upload audio if needed (checks if it's a local file)
-    let publicAudioUrl = card.uri;
-    if (card.uri && !card.uri.startsWith('http')) {
-        console.log('[CLOUD SYNC] Uploading audio for', card.id);
-        const uploadedUrl = await uploadAudioForLecture(card.uri, card.id);
-        if (uploadedUrl) {
-            publicAudioUrl = uploadedUrl;
+    // CRITICAL: Handle audio upload - ensure we never save local file:// URIs to cloud
+    let publicAudioUrl = null;
+    const rawUri = card.uri || card.audioUri;
+
+    if (rawUri) {
+        if (rawUri.startsWith('http')) {
+            // Already a cloud URL
+            publicAudioUrl = rawUri;
+            console.log('[CLOUD SYNC] Audio already in cloud');
+        } else {
+            // Local file - must upload to cloud storage
+            console.log('[CLOUD SYNC] Uploading local audio file to cloud...');
+            const uploadedUrl = await uploadAudioForLecture(rawUri, card.id);
+
+            if (uploadedUrl) {
+                publicAudioUrl = uploadedUrl;
+                console.log('[CLOUD SYNC] Audio uploaded successfully');
+            } else {
+                console.error('[CLOUD SYNC] Audio upload failed! Audio will not be available on other devices.');
+                // We still sync the lecture, but audio won't work cross-device
+                // The local URI is intentionally NOT saved to prevent broken references
+            }
         }
+    } else {
+        console.log('[CLOUD SYNC] No audio URI provided');
     }
 
     try {
         const cloudData = mapLocalToCloud({ ...card, uri: publicAudioUrl }, user.id);
+        console.log('[CLOUD SYNC] Saving to database with audio_url:', publicAudioUrl ? 'SET' : 'NULL');
 
-        // Check if lecture exists
-        const { data: existing, error: selectError } = await supabase
+        const { error } = await supabase
             .from('lectures')
-            .select('id')
-            .eq('id', card.id)
-            .maybeSingle();
+            .upsert(cloudData, { onConflict: 'id' });
 
-        if (selectError && selectError.code !== 'PGRST116') {
-            console.error('[CLOUD SYNC] Select error:', selectError);
-            throw selectError;
-        }
+        if (error) throw error;
 
-        if (existing) {
-            // Update existing
-            const { error: updateError } = await supabase
-                .from('lectures')
-                .update({
-                    title: cloudData.title,
-                    duration: cloudData.duration,
-                    category: cloudData.category,
-                    is_favorite: cloudData.is_favorite,
-                    transcript: cloudData.transcript,
-                    segments: cloudData.segments,
-                    summary: cloudData.summary,
-                    flashcards: cloudData.flashcards,
-                    quiz: cloudData.quiz,
-                    notes: cloudData.notes,
-                    journey_map: cloudData.journey_map,
-                    audio_url: cloudData.audio_url,
-                    updated_at: cloudData.updated_at,
-                })
-                .eq('id', card.id);
-
-            if (updateError) {
-                console.error('[CLOUD SYNC] Update error:', updateError);
-                throw updateError;
-            }
-        } else {
-            // Insert new
-            const { error: insertError } = await supabase
-                .from('lectures')
-                .insert(cloudData);
-
-            if (insertError) {
-                console.error('[CLOUD SYNC] Insert error:', insertError);
-                throw insertError;
-            }
-        }
-
-        return { success: true };
+        console.log('[CLOUD SYNC] Sync successful for lecture:', card.id);
+        return { success: true, cloudUrl: publicAudioUrl };
     } catch (error) {
         console.error('[CLOUD SYNC] Failed:', error);
         return { success: false, reason: 'error', error };
@@ -275,104 +302,25 @@ export const syncLectureToCloud = async (card) => {
 };
 
 /**
- * Sync all local lectures to cloud
- * Called on app startup or after regaining connectivity
+ * Fetch all lectures for current user directly from cloud
  */
-export const syncAllLecturesToCloud = async () => {
+export const fetchLecturesFromCloud = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     const user = session?.user;
-    if (!user) return { success: false, synced: 0 };
-
-    const online = await isOnline();
-    if (!online) {
-        return { success: false, synced: 0 };
-    }
+    if (!user) return [];
 
     try {
-        const storedCards = await AsyncStorage.getItem(LOCAL_CARDS_KEY);
-        if (!storedCards) return { success: true, synced: 0 };
-
-        const cards = JSON.parse(storedCards);
-        let synced = 0;
-        let skipped = 0;
-        let preparing = 0;
-
-        for (const card of cards) {
-            // Only sync ready cards (not preparing)
-            if (card.status === 'ready') {
-                const result = await syncLectureToCloud(card);
-                if (result.success) synced++;
-                else skipped++;
-            } else {
-                preparing++;
-            }
-        }
-
-        return { success: true, synced };
-    } catch (error) {
-        console.error('[CLOUD SYNC] Bulk sync failed:', error);
-        return { success: false, synced: 0, error };
-    }
-};
-
-/**
- * Pull lectures from cloud and merge with local
- * This is called on login to get user's cloud data
- */
-export const pullLecturesFromCloud = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const user = session?.user;
-    if (!user) return { success: false, pulled: 0 };
-
-    const online = await isOnline();
-    if (!online) return { success: false, pulled: 0 };
-
-    try {
-        const { data: cloudLectures, error } = await supabase
+        const { data, error } = await supabase
             .from('lectures')
             .select('*')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
-        if (!cloudLectures || cloudLectures.length === 0) {
-            return { success: true, pulled: 0 };
-        }
-
-        // Get existing local cards
-        const storedCards = await AsyncStorage.getItem(LOCAL_CARDS_KEY);
-        const localCards = storedCards ? JSON.parse(storedCards) : [];
-        const localIdsSet = new Set(localCards.map(c => c.id));
-
-        // Merge: Update existing and add new
-        const mergedCards = localCards.map(localCard => {
-            const cloudMatch = cloudLectures.find(c => c.id === localCard.id);
-            if (cloudMatch) {
-                // Cloud version exists - update local with cloud data
-                // We preserve local-only state if needed, but for now cloud wins for sync fields
-                const mapped = mapCloudToLocal(cloudMatch);
-                return { ...localCard, ...mapped };
-            }
-            return localCard;
-        });
-
-        // Add completely new cards from cloud
-        const existingIds = new Set(localCards.map(c => c.id));
-        const newCards = cloudLectures
-            .filter(l => !existingIds.has(l.id))
-            .map(mapCloudToLocal);
-
-        const finalCards = [...newCards, ...mergedCards];
-
-        // Sort by date desc
-        finalCards.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-        await AsyncStorage.setItem(LOCAL_CARDS_KEY, JSON.stringify(finalCards));
-
-        return { success: true, pulled: newCards.length, updated: cloudLectures.length };
+        return (data || []).map(mapCloudToLocal);
     } catch (error) {
-        console.error('[CLOUD PULL] Failed:', error);
-        return { success: false, pulled: 0, error };
+        console.error('[CLOUD FETCH] Failed:', error);
+        return [];
     }
 };
 
@@ -381,21 +329,16 @@ export const pullLecturesFromCloud = async () => {
  */
 export const deleteLectureFromCloud = async (lectureId) => {
     const { data: { session } } = await supabase.auth.getSession();
-    const user = session?.user;
-    if (!user) return { success: false };
-
-    const online = await isOnline();
-    if (!online) return { success: false, reason: 'offline' };
+    if (!session?.user) return { success: false };
 
     try {
         const { error } = await supabase
             .from('lectures')
             .delete()
             .eq('id', lectureId)
-            .eq('user_id', user.id);
+            .eq('user_id', session.user.id);
 
         if (error) throw error;
-
         return { success: true };
     } catch (error) {
         console.error('[CLOUD DELETE] Failed:', error);
@@ -404,16 +347,14 @@ export const deleteLectureFromCloud = async (lectureId) => {
 };
 
 /**
- * Sync Filters to Cloud
+ * Sync Filters (Cloud-only)
  */
 export const syncFiltersToCloud = async (filters) => {
     const { data: { session } } = await supabase.auth.getSession();
     const user = session?.user;
-    if (!user) return { success: false };
-    if (!(await isOnline())) return { success: false };
+    if (!user || !(await isOnline())) return;
 
     try {
-        // Filter out defaults (they are hardcoded)
         const customFilters = filters.filter(f => !f.isDefault).map(f => ({
             id: f.id,
             user_id: user.id,
@@ -422,151 +363,110 @@ export const syncFiltersToCloud = async (filters) => {
             updated_at: new Date().toISOString()
         }));
 
-        if (customFilters.length === 0) return { success: true };
+        if (customFilters.length === 0) return;
 
-        const { error } = await supabase
-            .from('filters')
-            .upsert(customFilters, { onConflict: 'id' });
-
-        if (error) {
-            if (error.code === 'PGRST205') {
-                console.warn('[FILTERS] Remote table missing. Skipping sync.');
-                return { success: false, reason: 'table_missing' };
-            }
-            throw error;
-        }
-        console.log('[FILTERS] Synced to cloud');
-        return { success: true };
+        await supabase.from('filters').upsert(customFilters, { onConflict: 'id' });
     } catch (e) {
-        if (e.reason === 'table_missing') return { success: false };
         console.error('[FILTERS] Sync failed:', e);
-        return { success: false, error: e };
     }
 };
 
 /**
  * Pull Filters from Cloud
  */
-export const pullFiltersFromCloud = async () => {
+export const fetchFiltersFromCloud = async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    const user = session?.user;
-    if (!user) return { success: false };
-    if (!(await isOnline())) return { success: false };
+    if (!session?.user) return [];
 
     try {
-        const { data: cloudFilters, error } = await supabase
+        const { data, error } = await supabase
             .from('filters')
             .select('*')
-            .eq('user_id', user.id);
+            .eq('user_id', session.user.id);
 
-        if (error) {
-            if (error.code === 'PGRST205') {
-                console.warn('[FILTERS] Remote table missing. Skipping pull.');
-                return { success: false, reason: 'table_missing' };
-            }
-            throw error;
-        }
-
-        // Merge with local
-        const storedFilters = await AsyncStorage.getItem(LOCAL_FILTERS_KEY);
-        const localFilters = storedFilters ? JSON.parse(storedFilters) : [];
-
-        // Simple merge: Cloud wins if ID matches, else add new
-        const localMap = new Map(localFilters.map(f => [f.id, f]));
-
-        if (cloudFilters) {
-            cloudFilters.forEach(cf => {
-                localMap.set(cf.id, {
-                    id: cf.id,
-                    name: cf.name,
-                    icon: cf.icon,
-                    isDefault: false
-                });
-            });
-        }
-
-        const merged = Array.from(localMap.values());
-        await AsyncStorage.setItem(LOCAL_FILTERS_KEY, JSON.stringify(merged));
-
-        return { success: true, filters: merged };
+        if (error) throw error;
+        return (data || []).map(f => ({
+            id: f.id,
+            name: f.name,
+            icon: f.icon,
+            isDefault: false
+        }));
     } catch (e) {
         console.error('[FILTERS] Pull failed:', e);
+        return [];
+    }
+};
+
+/**
+ * Fetch user preferences from cloud (Supabase metadata)
+ */
+export const fetchUserPreferences = async () => {
+    try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error || !user) return {};
+        return user.user_metadata?.app_prefs || {};
+    } catch (e) {
+        console.error('[PREFS] Fetch failed:', e);
+        return {};
+    }
+};
+
+/**
+ * Update a specific user preference in the cloud
+ */
+export const updateUserPreference = async (key, value) => {
+    try {
+        const { data: { user }, error: getError } = await supabase.auth.getUser();
+        if (getError || !user) return { success: false };
+
+        const currentPrefs = user.user_metadata?.app_prefs || {};
+        const updatedPrefs = { ...currentPrefs, [key]: value };
+
+        const { error: updateError } = await supabase.auth.updateUser({
+            data: { app_prefs: updatedPrefs }
+        });
+
+        if (updateError) throw updateError;
+        return { success: true };
+    } catch (e) {
+        console.error('[PREFS] Update failed:', e);
         return { success: false, error: e };
     }
 };
 
 /**
- * Sync All Data (Lectures + Filters)
+ * Coordinator for full sync of all user data
  */
 export const syncAllData = async () => {
-    console.log('[SYNC] Starting full sync...');
-    const lectures = await syncAllLecturesToCloud();
-    const pulledLectures = await pullLecturesFromCloud();
+    if (!(await isOnline())) return { success: false, reason: 'offline' };
 
-    // For filters, we first read current, then sync
-    const storedFilters = await AsyncStorage.getItem(LOCAL_FILTERS_KEY);
-    if (storedFilters) {
-        await syncFiltersToCloud(JSON.parse(storedFilters));
-    }
-    const pulledFilters = await pullFiltersFromCloud();
-
-    return {
-        lectures: { sent: lectures.synced, received: pulledLectures.pulled },
-        filters: { success: pulledFilters.success }
-    };
-};
-
-/**
- * Migrates legacy "rec_..." IDs to UUIDs
- * This ensures compatibility with Supabase primary keys
- */
-export const migrateLegacyData = async () => {
     try {
-        const storedCards = await AsyncStorage.getItem(LOCAL_CARDS_KEY);
-        if (!storedCards) return;
+        console.log('[SYNC] Starting full data sync...');
+        const [lectures, filters, prefs] = await Promise.all([
+            fetchLecturesFromCloud(),
+            fetchFiltersFromCloud(),
+            fetchUserPreferences()
+        ]);
 
-        const cards = JSON.parse(storedCards);
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-        let modified = false;
-
-        const migratedCards = await Promise.all(cards.map(async (card) => {
-            if (!uuidRegex.test(card.id)) {
-                const oldId = card.id;
-                const newId = generateUUID();
-
-                // Migrate chat history if exists
-                try {
-                    const chatKey = `@memry_chat_${oldId}`;
-                    const chatData = await AsyncStorage.getItem(chatKey);
-                    if (chatData) {
-                        await AsyncStorage.setItem(`@memry_chat_${newId}`, chatData);
-                        await AsyncStorage.removeItem(chatKey);
-                    }
-                } catch (e) {
-                    console.error('[MIGRATION] Chat migration failed:', e);
-                }
-
-                modified = true;
-                return { ...card, id: newId };
-            }
-            return card;
-        }));
-
-        if (modified) {
-            await AsyncStorage.setItem(LOCAL_CARDS_KEY, JSON.stringify(migratedCards));
-        }
-    } catch (e) {
-        console.error('[MIGRATION] ❌ Critical failure:', e);
+        console.log('[SYNC] Full sync successful');
+        return {
+            success: true,
+            data: { lectures, filters, prefs }
+        };
+    } catch (error) {
+        console.error('[SYNC] Full sync failed:', error);
+        return { success: false, error };
     }
 };
 
 export default {
-    syncAllData,
+    fetchLecturesFromCloud,
     syncLectureToCloud,
-    syncAllLecturesToCloud,
-    syncFiltersToCloud,
-    pullFiltersFromCloud,
-    pullLecturesFromCloud,
     deleteLectureFromCloud,
+    syncFiltersToCloud,
+    fetchFiltersFromCloud,
+    fetchUserPreferences,
+    updateUserPreference,
+    syncAllData,
     isOnline,
 };

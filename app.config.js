@@ -37,7 +37,7 @@ console.log('LOCAL_KEYS_IN_BUNDLE:', IS_PROD ? '🚫 HIDDEN' : '⚠️ INJECTED'
 console.log('========================================');
 
 // App versioning
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const BUILD_NUMBER = process.env.BUILD_NUMBER || '1';
 
 module.exports = {
@@ -154,7 +154,7 @@ module.exports = {
 
     // Update configuration
     updates: {
-      fallbackToCacheTimeout: 0,
+      fallbackToCacheTimeout: 5000,
       url: "https://u.expo.dev/a00c48e8-46c4-4e80-be83-b58d2c40e7f9"
     },
 
